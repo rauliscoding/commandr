@@ -1,0 +1,5 @@
+{
+  "//": "Solution-style config: it compiles NOTHING itself. Typecheck with `npm run typecheck` (tsconfig.app.json) — see CLAUDE.md.",
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+}

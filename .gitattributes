@@ -1,0 +1,22 @@
+# Normalise line endings in the repository; check out with LF everywhere so the
+# same files behave identically on Windows, macOS and the Linux servers.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Binary assets.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+
+# Lockfiles: do not try to merge them by hand; regenerate instead.
+package-lock.json merge=binary linguist-generated=true
+uv.lock merge=binary linguist-generated=true

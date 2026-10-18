@@ -1,0 +1,85 @@
+# Local development. From the repository root:
+#
+#   docker compose -f deploy/compose/docker-compose.dev.yml up -d db redis   # just the services
+#   docker compose -f deploy/compose/docker-compose.dev.yml up               # everything
+#
+# Ports are deliberately NOT the defaults (5433, 6380) so this never collides
+# with another project's Postgres or Redis on the same machine.
+# Full guide: docs/development.md
+
+name: commandr-dev
+
+x-backend-env: &backend-env
+  DJANGO_SETTINGS_MODULE: config.settings.dev
+  DJANGO_SECRET_KEY: dev-only-not-secret
+  DATABASE_URL: postgres://commandr_app:commandr_app@db:5432/commandr
+  REDIS_URL: redis://redis:6379/0
+  VAULT_KEYS: ${VAULT_KEYS:-M0pDTXhQdFNqVnBHcG1TNXRGc2tYc1pxbW1YbWlRbE4=}
+  APP_ORIGIN: http://localhost:5173
+  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,api
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: commandr
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      COMMANDR_OWNER_PASSWORD: commandr_owner
+      COMMANDR_APP_PASSWORD: commandr_app
+    ports: ["127.0.0.1:5433:5432"]
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d commandr"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:6380:6379"]
+
+  # Migrations run as the OWNER role, then exit. The app never has these rights.
+  migrate:
+    build: { context: ../../backend, target: dev }
+    environment:
+      <<: *backend-env
+      DATABASE_URL: postgres://commandr_owner:commandr_owner@db:5432/commandr
+    command: python manage.py migrate --noinput
+    volumes: ["../../backend:/app"]
+    depends_on: { db: { condition: service_healthy } }
+
+  api:
+    build: { context: ../../backend, target: dev }
+    environment: *backend-env
+    command: python manage.py runserver 0.0.0.0:8000
+    ports: ["127.0.0.1:8000:8000"]
+    volumes: ["../../backend:/app"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_started }
+
+  worker:
+    build: { context: ../../backend, target: dev }
+    environment: *backend-env
+    command: celery -A config worker -Q default -l info
+    volumes: ["../../backend:/app"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_PROXY: http://api:8000
+    ports: ["127.0.0.1:5173:5173"]
+    volumes:
+      - ../../frontend:/app
+      - web_node_modules:/app/node_modules
+    depends_on: [api]
+
+volumes:
+  db_data:
+  web_node_modules:

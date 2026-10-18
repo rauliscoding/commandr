@@ -1,0 +1,293 @@
+openapi: 3.1.0
+info:
+  title: Commandr Ingestion API
+  version: 1.0.0-draft
+  summary: How customer applications send health, metrics, events and errors to Commandr.
+  description: |
+    Human-readable contract: docs/architecture/ingestion-contract.md.
+    Within v1 only optional fields are added. Clients must ignore unknown
+    response fields; the server rejects unknown top-level request fields.
+servers:
+  - url: https://ingest.commandr.app
+security:
+  - ingestKey: []
+
+paths:
+  /v1/ingest:
+    post:
+      operationId: ingestBatch
+      summary: Submit a batch of metrics, events and errors
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, maxLength: 128 }
+          description: Repeating a request with the same key within 24h has no further effect.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IngestBatch' }
+      responses:
+        '202':
+          description: Accepted (possibly partially)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/RetryLater' }
+        '503': { $ref: '#/components/responses/RetryLater' }
+
+  /v1/heartbeat/{token}:
+    parameters:
+      - $ref: '#/components/parameters/HeartbeatToken'
+    post:
+      operationId: heartbeatSuccess
+      summary: Report a successful run
+      security: []
+      responses:
+        '204': { description: Recorded }
+        '404': { description: Unknown or revoked token }
+    get:
+      operationId: heartbeatSuccessGet
+      summary: Same as POST, for curl-in-cron convenience
+      security: []
+      responses:
+        '204': { description: Recorded }
+        '404': { description: Unknown or revoked token }
+
+  /v1/heartbeat/{token}/start:
+    parameters:
+      - $ref: '#/components/parameters/HeartbeatToken'
+    post:
+      operationId: heartbeatStart
+      summary: Mark a run as started (enables duration measurement)
+      security: []
+      responses:
+        '204': { description: Recorded }
+
+  /v1/heartbeat/{token}/fail:
+    parameters:
+      - $ref: '#/components/parameters/HeartbeatToken'
+    post:
+      operationId: heartbeatFail
+      summary: Report a failed run
+      security: []
+      requestBody:
+        required: false
+        content:
+          text/plain:
+            schema: { type: string, maxLength: 10000 }
+      responses:
+        '204': { description: Recorded }
+
+webhooks:
+  statusPoll:
+    get:
+      operationId: statusDocument
+      summary: Status endpoint the CUSTOMER implements; Commandr polls it
+      description: |
+        Served by the customer's app (default path /.well-known/commandr/status).
+        Commandr signs each request; verify X-Commandr-Signature and reject
+        timestamps older than 300 seconds.
+      parameters:
+        - name: X-Commandr-Signature
+          in: header
+          required: true
+          schema: { type: string, pattern: '^t=\d+,v1=[0-9a-f]{64}$' }
+          description: 't=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<METHOD>.<path>")>'
+        - name: X-Commandr-Project
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatusDocument' }
+        '304': { description: Not modified (ETag honoured) }
+        '401': { description: Signature invalid or stale }
+
+components:
+  securitySchemes:
+    ingestKey:
+      type: http
+      scheme: bearer
+      description: Project ingest key (cmdr_ingest_<env>_...). Write-only.
+
+  parameters:
+    HeartbeatToken:
+      name: token
+      in: path
+      required: true
+      schema: { type: string, minLength: 22, maxLength: 64 }
+
+  responses:
+    Problem:
+      description: Request rejected
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RetryLater:
+      description: Retry after the indicated delay with the same Idempotency-Key
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    MetricName:
+      type: string
+      pattern: '^[a-z0-9_]+(\.[a-z0-9_]+)*$'
+      maxLength: 120
+
+    Attributes:
+      type: object
+      maxProperties: 8
+      propertyNames: { pattern: '^[a-z0-9_]{1,64}$' }
+      additionalProperties: { type: string, maxLength: 128 }
+
+    Resource:
+      type: object
+      additionalProperties: false
+      required: [service]
+      properties:
+        service: { type: string, maxLength: 120 }
+        version: { type: string, maxLength: 64 }
+        environment: { type: string, maxLength: 32 }
+
+    Metric:
+      type: object
+      additionalProperties: false
+      required: [name, type, value]
+      properties:
+        name: { $ref: '#/components/schemas/MetricName' }
+        type: { type: string, enum: [counter, gauge] }
+        value: { type: number }
+        ts: { type: string, format: date-time, description: Defaults to receipt time }
+        interval_s:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          description: For counters, the window the delta covers.
+        unit: { type: string, maxLength: 32 }
+        attrs: { $ref: '#/components/schemas/Attributes' }
+
+    Event:
+      type: object
+      additionalProperties: false
+      required: [name, ts]
+      properties:
+        id: { type: string, maxLength: 64, description: Client-generated, used for de-duplication }
+        name: { $ref: '#/components/schemas/MetricName' }
+        ts: { type: string, format: date-time }
+        props:
+          type: object
+          maxProperties: 16
+          additionalProperties:
+            oneOf:
+              - { type: string, maxLength: 256 }
+              - { type: number }
+              - { type: boolean }
+
+    ErrorEvent:
+      type: object
+      additionalProperties: false
+      required: [ts, level, fingerprint, message]
+      properties:
+        id: { type: string, maxLength: 64 }
+        ts: { type: string, format: date-time }
+        level: { type: string, enum: [warning, error, critical] }
+        fingerprint: { type: string, maxLength: 128 }
+        type: { type: string, maxLength: 200 }
+        message: { type: string, maxLength: 2000 }
+        culprit: { type: string, maxLength: 500 }
+        stack: { type: string, maxLength: 65536 }
+        attrs: { $ref: '#/components/schemas/Attributes' }
+
+    IngestBatch:
+      type: object
+      additionalProperties: false
+      required: [schema]
+      properties:
+        schema: { const: commandr.ingest/v1 }
+        sent_at: { type: string, format: date-time }
+        resource: { $ref: '#/components/schemas/Resource' }
+        metrics: { type: array, maxItems: 1000, items: { $ref: '#/components/schemas/Metric' } }
+        events: { type: array, maxItems: 1000, items: { $ref: '#/components/schemas/Event' } }
+        errors: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/ErrorEvent' } }
+
+    IngestResult:
+      type: object
+      required: [accepted, rejected]
+      properties:
+        accepted: { type: integer, minimum: 0 }
+        rejected:
+          type: array
+          items:
+            type: object
+            required: [section, index, code, message]
+            properties:
+              section: { type: string, enum: [metrics, events, errors] }
+              index: { type: integer, minimum: 0 }
+              code:
+                type: string
+                enum: [invalid, too_old, in_future, cardinality_limit, quota_exceeded, personal_data, duplicate]
+              message: { type: string }
+
+    Check:
+      type: object
+      required: [key, status]
+      properties:
+        key: { type: string, maxLength: 200 }
+        name: { type: string, maxLength: 200 }
+        status: { type: string, enum: [ok, warn, fail, unknown] }
+        summary: { type: string, maxLength: 500 }
+        value: { type: number }
+        unit: { type: string, maxLength: 32 }
+
+    Gauge:
+      type: object
+      required: [name, value]
+      properties:
+        name: { $ref: '#/components/schemas/MetricName' }
+        value: { type: number }
+        unit: { type: string, maxLength: 32 }
+        attrs: { $ref: '#/components/schemas/Attributes' }
+
+    Kpi:
+      type: object
+      required: [name, value]
+      properties:
+        name: { $ref: '#/components/schemas/MetricName' }
+        label: { type: string, maxLength: 120 }
+        value: { type: [number, 'null'], description: null means not available, never 0 }
+        unit: { type: string, maxLength: 32 }
+
+    StatusDocument:
+      type: object
+      required: [schema, service, checks]
+      properties:
+        schema: { const: commandr.status/v1 }
+        service: { type: string, maxLength: 120 }
+        version: { type: string, maxLength: 64 }
+        environment: { type: string, maxLength: 32 }
+        generated_at: { type: string, format: date-time }
+        checks: { type: array, maxItems: 500, items: { $ref: '#/components/schemas/Check' } }
+        gauges: { type: array, maxItems: 500, items: { $ref: '#/components/schemas/Gauge' } }
+        kpis: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/Kpi' } }
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }

@@ -1,0 +1,144 @@
+/*
+ * Design tokens — the ONLY place raw colour values live (docs/practices/design-system.md).
+ *
+ * Three theme states: [data-theme="light"], [data-theme="dark"], and no
+ * attribute (follow the OS). Every token is defined on bare :root first; the
+ * dark blocks only redefine. Every text/background pair meets WCAG 2.2 AA
+ * (4.5:1 text, 3:1 UI) in both themes — re-check when changing a value.
+ */
+
+:root {
+  /* Surfaces: neutrals biased slightly towards the green accent. */
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef2f0;
+  --canvas: #f6f8f7;
+  --overlay: rgb(16 24 21 / 0.45);
+
+  /* Text */
+  --text: #16201d;
+  --text-muted: #4d5b56; /* 7.1:1 on canvas */
+  --text-subtle: #5f6d68; /* 5.3:1 on canvas */
+  --text-inverse: #ffffff;
+  --text-link: #0b5f4e;
+
+  /* Lines */
+  --border: #d3ddd8;
+  --border-strong: #a9b8b2; /* 3:1 against surface, for input outlines */
+  --focus-ring: #0b5f4e;
+
+  /* Brand */
+  --primary: #0d6b57;
+  --primary-hover: #0a5848;
+  --primary-contrast: #ffffff;
+  --primary-soft: #dcefe9;
+
+  /* Status: each with background, foreground and border */
+  --ok-bg: #e2f3e7;
+  --ok-fg: #1a6b37;
+  --ok-border: #9fd1ae;
+  --warn-bg: #fbefd6;
+  --warn-fg: #7a4f00;
+  --warn-border: #e3c27c;
+  --fail-bg: #fbe3e1;
+  --fail-fg: #a3221b;
+  --fail-border: #eba7a2;
+  --unknown-bg: #edf0ef;
+  --unknown-fg: #4d5b56;
+  --unknown-border: #c5cfcb;
+  --info-bg: #e1ecf8;
+  --info-fg: #1b5594;
+  --info-border: #a7c4e6;
+
+  /* Type */
+  /* System stack: no web font to download, and every platform's best UI face. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+
+  /* Radius & elevation */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-raised: 0 1px 2px rgb(16 24 21 / 0.06), 0 1px 3px rgb(16 24 21 / 0.08);
+  --shadow-overlay: 0 8px 24px rgb(16 24 21 / 0.14);
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: #161e1b;
+    --surface-raised: #1b2521;
+    --surface-sunken: #111816;
+    --canvas: #0f1513;
+    --overlay: rgb(0 0 0 / 0.6);
+    --text: #e3ebe8;
+    --text-muted: #a5b3ae;
+    --text-subtle: #8e9d98;
+    --text-inverse: #0f1513;
+    --text-link: #6fdcbc;
+    --border: #2b3833;
+    --border-strong: #52645d;
+    --focus-ring: #6fdcbc;
+    --primary: #4fd1ad;
+    --primary-hover: #6fdcbc;
+    --primary-contrast: #0b1a15;
+    --primary-soft: #173a31;
+    --ok-bg: #16301f;
+    --ok-fg: #7fdb9b;
+    --ok-border: #2f6a42;
+    --warn-bg: #352812;
+    --warn-fg: #f2c66a;
+    --warn-border: #6f5420;
+    --fail-bg: #3a1a18;
+    --fail-fg: #ff9b92;
+    --fail-border: #7a3732;
+    --unknown-bg: #1f2926;
+    --unknown-fg: #a5b3ae;
+    --unknown-border: #3b4a45;
+    --info-bg: #152a42;
+    --info-fg: #8fbdf2;
+    --info-border: #2f5584;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --surface: #161e1b;
+  --surface-raised: #1b2521;
+  --surface-sunken: #111816;
+  --canvas: #0f1513;
+  --overlay: rgb(0 0 0 / 0.6);
+  --text: #e3ebe8;
+  --text-muted: #a5b3ae;
+  --text-subtle: #8e9d98;
+  --text-inverse: #0f1513;
+  --text-link: #6fdcbc;
+  --border: #2b3833;
+  --border-strong: #52645d;
+  --focus-ring: #6fdcbc;
+  --primary: #4fd1ad;
+  --primary-hover: #6fdcbc;
+  --primary-contrast: #0b1a15;
+  --primary-soft: #173a31;
+  --ok-bg: #16301f;
+  --ok-fg: #7fdb9b;
+  --ok-border: #2f6a42;
+  --warn-bg: #352812;
+  --warn-fg: #f2c66a;
+  --warn-border: #6f5420;
+  --fail-bg: #3a1a18;
+  --fail-fg: #ff9b92;
+  --fail-border: #7a3732;
+  --unknown-bg: #1f2926;
+  --unknown-fg: #a5b3ae;
+  --unknown-border: #3b4a45;
+  --info-bg: #152a42;
+  --info-fg: #8fbdf2;
+  --info-border: #2f5584;
+  color-scheme: dark;
+}

@@ -1,0 +1,133 @@
+# Production / self-hosted. From the repository root, with a filled-in .env:
+#
+#   docker compose -f deploy/compose/docker-compose.prod.yml --env-file .env up -d
+#
+# Full guide: docs/self-hosting.md. Upgrades run `migrate` first (it is a
+# one-off that must finish before web/worker start — `depends_on` enforces it).
+#
+# Networks:
+#   edge    caddy <-> web/ingest. Only caddy publishes ports.
+#   data    internal: no route out. The only network Postgres and Redis are on.
+#   egress  outbound internet for the processes that call providers (worker, beat).
+# web and ingest reach the internet through `edge` (OAuth token exchange, SMTP).
+
+name: commandr
+
+x-backend: &backend
+  image: ${COMMANDR_API_IMAGE:-ghcr.io/rauliscoding/commandr-api:latest}
+  build: { context: ../../backend, target: prod }
+  restart: unless-stopped
+  read_only: true
+  tmpfs: ["/tmp"]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  environment: &backend-env
+    DJANGO_SETTINGS_MODULE: config.settings.prod
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY}
+    DJANGO_ALLOWED_HOSTS: ${APP_DOMAIN},${INGEST_DOMAIN},web,ingest
+    APP_ORIGIN: https://${APP_DOMAIN}
+    DATABASE_URL: postgres://commandr_app:${COMMANDR_APP_PASSWORD:?set COMMANDR_APP_PASSWORD}@db:5432/commandr
+    REDIS_URL: redis://redis:6379/0
+    VAULT_KEYS: ${VAULT_KEYS:?set VAULT_KEYS}
+    EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+    DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Commandr <no-reply@example.com>}
+    GOOGLE_SIGNIN_CLIENT_ID: ${GOOGLE_SIGNIN_CLIENT_ID:-}
+    GOOGLE_SIGNIN_CLIENT_SECRET: ${GOOGLE_SIGNIN_CLIENT_SECRET:-}
+  networks: [data]
+
+services:
+  caddy:
+    image: ${COMMANDR_WEB_IMAGE:-ghcr.io/rauliscoding/commandr-web:latest}
+    build: { context: ../.., dockerfile: deploy/docker/web.Dockerfile }
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+      INGEST_DOMAIN: ${INGEST_DOMAIN:?set INGEST_DOMAIN}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on: [web, ingest]
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    environment:
+      <<: *backend-env
+      # Migrations run as the OWNER role; the app itself never has these rights.
+      DATABASE_URL: postgres://commandr_owner:${COMMANDR_OWNER_PASSWORD:?set COMMANDR_OWNER_PASSWORD}@db:5432/commandr
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    depends_on: { db: { condition: service_healthy } }
+
+  web:
+    <<: *backend
+    networks: [data, edge]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_started }
+
+  ingest:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      DJANGO_ROOT_URLCONF: config.urls_ingest
+    networks: [data, edge]
+    command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *backend
+    command: ["celery", "-A", "config", "worker", "-Q", "default", "--concurrency", "2", "-l", "info"]
+    networks: [data, egress]
+    healthcheck: { disable: true }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  beat:
+    <<: *backend
+    command: ["celery", "-A", "config", "beat", "-l", "info"]
+    networks: [data, egress]
+    healthcheck: { disable: true }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  # Phase 1 adds `poller` (customer status endpoints, on its own egress-only
+  # network) and `watchdog` (self-checks + daily digest).
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: commandr
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD}
+      COMMANDR_OWNER_PASSWORD: ${COMMANDR_OWNER_PASSWORD}
+      COMMANDR_APP_PASSWORD: ${COMMANDR_APP_PASSWORD}
+    volumes:
+      - ${DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d commandr"]
+      interval: 5s
+      retries: 20
+    networks: [data]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ${DATA_DIR:-./data}/redis:/data
+    networks: [data]
+
+networks:
+  edge: {}
+  egress: {}
+  data:
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:

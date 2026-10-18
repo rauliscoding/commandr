@@ -1,0 +1,58 @@
+# --- Secrets -----------------------------------------------------------------
+# Every .env is ignored. Templates are committed as *.example and must hold
+# blank or obviously fake values only. See docs/practices/security.md.
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+secrets/
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# --- Django ------------------------------------------------------------------
+# Only STATIC_ROOT is generated. Never ignore a bare `static/` directory: it
+# would also match source assets inside apps, and git ignores them silently.
+/backend/staticfiles/
+/backend/media/
+db.sqlite3
+
+# --- Node / frontend ---------------------------------------------------------
+node_modules/
+/frontend/dist/
+*.tsbuildinfo
+.vite/
+playwright-report/
+test-results/
+
+# --- Logs & local data -------------------------------------------------------
+*.log
+logs/
+.data/
+
+# --- Editors & OS ------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Claude Code -------------------------------------------------------------
+# Shared agent config (.claude/settings.json, .claude/skills/) IS committed.
+# Machine-local overrides are not.
+.claude/settings.local.json
