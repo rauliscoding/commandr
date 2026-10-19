@@ -47,7 +47,11 @@ Branching, commit messages and review: [docs/practices/git-process.md](docs/prac
 - dev and prod Docker Compose, and the Caddy edge.
 
 Not yet: any connector's auth or sync, ingestion endpoints, monitoring, social,
-email, finance, board (Phase 1+). No CI workflow yet.
+email, finance, board (Phase 1+).
+
+CI (`.github/workflows/ci.yml`) runs on every pull request and push to `main`:
+backend, frontend, security (gitleaks, pip-audit, npm audit) and DCO sign-off.
+Actions are pinned to commit SHAs; Dependabot bumps them weekly.
 
 ## Commands
 

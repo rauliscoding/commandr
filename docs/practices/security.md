@@ -90,7 +90,9 @@ Two independent layers; either alone must be enough to stop a leak.
 - Environment variables injected at deploy time; `.env` never committed;
   `.env.example` documents every variable with a fake value.
 - Separate secrets per environment. Rotate on staff change and at least yearly.
-- `gitleaks` in pre-commit and CI.
+- `gitleaks` in pre-commit and CI (CI scans the full history). Deliberately
+  public values (the development vault keys, fake test tokens) are allowlisted
+  by exact string in `.gitleaks.toml`, never by path.
 
 ### Customer credentials (the vault)
 

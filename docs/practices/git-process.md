@@ -79,18 +79,34 @@ One logical change per commit. The body explains **why**; the diff shows what.
 
 ## Automated checks (CI, required on `main`)
 
-| Check | Tooling |
-|---|---|
-| Lint & format | ruff, eslint, prettier |
-| Types | mypy, `tsc --noEmit -p tsconfig.app.json` |
-| Tests | pytest (with Postgres service, RLS on), vitest, Playwright smoke |
-| Accessibility | axe via Playwright on key routes |
-| Migrations | `makemigrations --check`, migrations apply on an empty DB |
-| Security | gitleaks, pip-audit, npm audit, Trivy image scan, CodeQL |
-| Contract | OpenAPI file validates; ingest schema examples validate |
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`.
+A newer push to the same pull request cancels the run in flight. Make each job
+below a required status check in the branch protection for `main`.
 
-Local pre-commit (`pre-commit` framework): ruff, prettier, eslint on staged files,
-gitleaks, trailing whitespace, large-file guard.
+| Job | Runs |
+|---|---|
+| **Backend** | Python 3.13 and a `postgres:17` service with the same roles as dev and prod (`deploy/compose/postgres/init/01-roles.sh`); tests connect as the non-superuser `commandr_owner`, so RLS is on. `ruff check`, `ruff format --check`, `mypy commandr config`, `makemigrations --check --dry-run`, `pytest` (which also applies every migration to an empty database) |
+| **Frontend** | Node 24. `npm ci`, `npm run lint` (eslint), `npm run typecheck` (`tsc --noEmit -p tsconfig.app.json`), `npm test` (vitest, with axe), `npm run build` |
+| **Security** | gitleaks over the full history, `pip-audit` on everything the backend installs, `npm audit --omit=dev` |
+| **DCO sign-off** | pull requests only: every non-merge commit carries `Signed-off-by:` matching its author. Dependabot's PRs are exempt (a bot cannot certify the DCO) |
+
+How the workflow is kept trustworthy:
+
+- Every action is pinned to a full commit SHA with the version in a comment;
+  tags can be moved, SHAs cannot. Release binaries (gitleaks) are
+  checksum-verified.
+- `permissions: contents: read` for the whole workflow; a job that needs more
+  must widen it for itself only. Checkouts do not persist the token.
+- Dependabot (`.github/dependabot.yml`) opens one grouped PR a week each for pip,
+  npm and the action pins.
+
+Planned, not yet in CI: Playwright smoke and axe on key routes, migrations
+reversing cleanly, prettier `--check`, Trivy image scan, CodeQL, and
+OpenAPI / ingest-example validation.
+
+Local pre-commit (`pre-commit` framework, `.pre-commit-config.yaml`): ruff lint
+and format, prettier on `frontend/`, gitleaks, trailing whitespace, end-of-file
+fixer, large-file guard. Setup: [development.md § Pre-commit hooks](../development.md#pre-commit-hooks).
 
 ## Releases and deploys
 

@@ -96,15 +96,43 @@ docker compose -f deploy/compose/docker-compose.dev.yml up
 Starts Postgres, Redis, migrations (as owner), the API (as app), a Celery worker
 and Vite. Code is bind-mounted, so edits reload.
 
+## Pre-commit hooks
+
+Once per clone, from the repository root (with the backend virtualenv active, or
+any Python):
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Every `git commit` then runs, on the staged files only: ruff (lint with fixes,
+and format) on `backend/`, prettier on `frontend/`, gitleaks, trailing-whitespace
+and end-of-file fixers, and a 500 KB large-file guard
+(`.pre-commit-config.yaml`). A hook that fixes a file stops the commit; review
+the fix, `git add` it and commit again. `pre-commit run --all-files` checks the
+whole tree.
+
+The first run downloads each hook's tooling (gitleaks builds with Go, which
+pre-commit fetches itself); later runs take a second or two.
+
 ## Checking your change (what CI runs)
 
 ```bash
 # backend/
-ruff check . && ruff format --check . && mypy commandr config && pytest
+ruff check . && ruff format --check . && mypy commandr config
+python manage.py makemigrations --check --dry-run --settings=config.settings.test
+pytest
 
 # frontend/
 npm run lint && npm run typecheck && npm test && npm run build
 ```
+
+CI (`.github/workflows/ci.yml`) runs these on every pull request and push to
+`main`, against a fresh `postgres:17` with the same roles as the dev database,
+plus a security job (gitleaks over the full history, `pip-audit`,
+`npm audit --omit=dev`) and, on pull requests, a check that every commit is
+signed off by its author (`git commit -s`).
 
 `npm run typecheck` uses `tsconfig.app.json`. **Never typecheck with
 `tsc -p tsconfig.json`**: that file is solution-style and compiles zero files,
@@ -128,4 +156,5 @@ so it always "passes".
 | Connection hangs | `localhost` on Windows | use `127.0.0.1` |
 | `permission denied for table …` running the server | migrations ran as `commandr_app` | run `migrate` with the owner URL |
 | Port 5433 or 6380 in use | another stack | change the left side of `ports:` in the dev compose file |
+| CI's "DCO sign-off" job fails | a commit has no `Signed-off-by` matching its author | `git rebase --signoff main` on your branch, then force-push it |
 | Roles missing after changing the init script | it only runs on an empty data volume | `docker compose -f deploy/compose/docker-compose.dev.yml down -v` (deletes dev data) |
