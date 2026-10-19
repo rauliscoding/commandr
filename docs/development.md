@@ -111,6 +111,23 @@ Uptime probes and status endpoints refuse private and loopback addresses
 machine cannot be polled. Point them at something public, or test the
 document shape with the unit tests instead.
 
+### The Django SDK (`sdks/python/commandr-django/`)
+
+The SDK has its own environment. It needs no database: its tests use SQLite
+and a fake ingest server.
+
+```bash
+cd sdks/python/commandr-django
+python -m venv .venv && .venv/Scripts/activate   # macOS/Linux: source .venv/bin/activate
+pip install -e ".[dev]"
+ruff check . && ruff format --check . && mypy src tests && pytest
+tox -p auto   # Django 5.2 / 6.0 / 6.1 on every supported Python found
+```
+
+To try it against a local Commandr, set `"INGEST_URL": "http://127.0.0.1:8001"`
+in the throwaway project's `COMMANDR`. Traffic and errors arrive through the
+drainer; polling a local status endpoint is refused, as described above.
+
 ## Or: everything in containers
 
 ```bash

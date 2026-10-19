@@ -171,12 +171,18 @@ def test_check_now_only_for_polled_connectors(fresh_api, owner_a, project_a, htt
     assert api.post(url("connection-check-now", project_a, connection_id=probe)).status_code == 202
 
 
-def test_catalogue_offers_the_four_health_connectors_with_their_fields(
+def test_catalogue_offers_the_health_connectors_with_their_fields(
     fresh_api, owner_a, project_a
 ) -> None:  # type: ignore[no-untyped-def]
     data = fresh_api(owner_a).get(url("catalogue", project_a)).data
     available = {c["slug"]: c for c in data["connectors"] if c["availability"] == "available"}
-    assert set(available) == {"uptime_probe", "heartbeat", "status_endpoint", "push_api"}
+    assert set(available) == {
+        "uptime_probe",
+        "heartbeat",
+        "status_endpoint",
+        "push_api",
+        "django_sdk",
+    }
     fields = {f["name"]: f for f in available["heartbeat"]["fields"]}
     assert fields["period"]["kind"] == "select"
     assert {"value": "86400", "label": "Every day"} in fields["period"]["options"]

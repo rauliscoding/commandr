@@ -3,7 +3,8 @@
 Every connector is declared so the catalogue is complete and honest about what
 is coming; each one becomes `Availability.AVAILABLE` when its connector package
 (setup handler in `commandr/connectors/<slug>/`) lands, via the `/add-connector`
-skill. Available in Phase 1: uptime_probe, heartbeat, status_endpoint, push_api.
+skill. Available in Phase 1: uptime_probe, heartbeat, status_endpoint, push_api,
+django_sdk.
 """
 
 from commandr.integrations.registry import (
@@ -199,9 +200,29 @@ register(
         requirements=(R.FREE, R.CODE_CHANGE),
         logo_text="dj",
         docs_path="connectors/django-sdk",
+        availability=Availability.AVAILABLE,
+        fields=(
+            SetupField(
+                "url",
+                "Your app's status address",
+                FieldKind.URL,
+                help="https:// only. The SDK serves /.well-known/commandr/status.",
+                placeholder="https://api.example.com/.well-known/commandr/status",
+            ),
+            _INTERVAL,
+            SetupField(
+                "environment",
+                "Environment",
+                FieldKind.SELECT,
+                help="Shown in the ingest key's prefix, so a leaked live key is easy to spot.",
+                default="live",
+                options=(("live", "Live"), ("test", "Test")),
+            ),
+        ),
         steps=(
-            SetupStep("Install the package", "pip install commandr-django"),
-            SetupStep("Add three settings", "Your ingest key, signing secret and service name."),
+            SetupStep("Enter your app's address", "Where the SDK will serve its status."),
+            SetupStep("Copy your keys", "An ingest key, and the signing secret the first time."),
+            SetupStep("Install the package", "pip install commandr-django, and add the settings."),
             SetupStep("Deploy and wait for data", "Checks and traffic appear within a minute."),
         ),
     )

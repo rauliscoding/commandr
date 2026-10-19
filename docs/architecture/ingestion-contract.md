@@ -210,6 +210,12 @@ within 24 h returns the first answer and is not queued again. Points are also
 de-duplicated by `(series, ts)` and events and errors by `id`, so a retry that
 slips past the idempotency window still stores nothing twice.
 
+**Several processes, one series:** because of that de-duplication, two
+processes that push the same counter series with the same `ts` keep only one
+value. A client that runs in several processes (gunicorn or Celery workers)
+must give each process distinct timestamps, for example by adding a random
+sub-second offset per process to its window timestamps. The SDK does this.
+
 Personal data: an attribute or property whose key names personal data
 (`email`, `user_id`, `ip`, `name`, `phone`…) or whose value looks like an email
 address or IP address is rejected with `personal_data`.
@@ -237,10 +243,38 @@ COMMANDR = {
 urlpatterns += [path("", include("commandr_django.urls"))]   # mounts the status endpoint
 ```
 
-Gives, with no further code: signed status endpoint; database, cache, Celery
-worker/beat and disk checks; per-route traffic by **route template** (in-process
-aggregation, flushed every 60 s); error capture via a logging handler; a
-`@commandr.heartbeat("nightly-prune")` decorator for tasks.
+Source: [`sdks/python/commandr-django/`](../../sdks/python/commandr-django/), whose
+README lists every setting. Supports Django 5.2, 6.0 and 6.1 on Python 3.10+;
+it depends on nothing but Django. Set up from **Integrations → Django SDK**,
+which creates one connection with an ingest key and a polled status endpoint
+(help: [connectors/django-sdk.md](../connectors/django-sdk.md)).
+
+Gives, with no further code:
+
+- **Signed status endpoint** at `/.well-known/commandr/status`, verified exactly
+  as in § 1 (401 with no body otherwise; with `PROJECT` set, a poll for another
+  project is refused too). Built-in checks: `database` (one per database
+  alias), `cache` (one per cache alias), `celery` (workers that answer a
+  ping, when a Celery app is configured) and `disk`; gauges
+  `system.cpu.load_per_core` and `system.memory.used_ratio` where the OS
+  reports them. Each check runs in its own thread with a 5 s budget: one that
+  raises or overruns is `fail` (only the exception type is reported), and one
+  still stuck from the previous poll is not started again. The answer carries
+  an `ETag` and honours `If-None-Match`.
+- **Traffic** by **route template** (`api/items/{pk}/`, never the concrete
+  path), aggregated in process and flushed every 60 s:
+  `http.server.requests` counters (attrs `route`, `status_class`, with
+  `interval_s`) and `http.server.duration_ms` gauges (attrs `route`,
+  `quantile` = `p50` | `p95`). Over 200 routes in a window fold into `other`.
+- **Errors** through a logging handler added to the root logger (records at
+  ERROR and above). The fingerprint is `sha1:` of the type, the culprit (the
+  innermost frame in the app's own code) and the frames without line numbers;
+  a log record without an exception is grouped by logger, function and
+  message template. At most 10 per fingerprint a minute.
+- **Heartbeats**: `@commandr.heartbeat("nightly-prune")` pings `start`, then
+  success or `fail` with the exception, which it re-raises. The token comes from
+  `COMMANDR["HEARTBEATS"]`. Celery beat has no built-in check: a heartbeat on
+  a frequent beat task covers it.
 
 Custom checks and KPIs:
 
@@ -257,11 +291,23 @@ def external_volume():
 def users_total():
     return User.objects.count()
 
-commandr.event("user.signup", plan="trial")     # push, buffered, non-blocking
+commandr.event("user.signup", plan="trial", user_id=user.pk)   # push, buffered, non-blocking
 ```
 
-The SDK never blocks or raises into the host app: buffers are bounded, sending is
-on a background thread, failures are logged at WARNING once per minute.
+A check returns a `Check`, `True` or `False`; `None` is `unknown`. A KPI that
+raises, overruns or returns `None` is sent as `null`, never 0. `user_id` is
+sent only as `user_ref`, an HMAC keyed with the project's secret; event
+properties that look like personal data (§ Push API) are left out with a
+warning rather than getting the whole event rejected.
+
+The SDK never blocks or raises into the host app: buffers are bounded (2,000
+items; newer items are dropped when full), sending is on one background thread
+per process (restarted after a fork), a failed batch is retried with backoff
+and the same `Idempotency-Key` up to 5 times, redirects are not followed, and
+failures are logged at WARNING at most once a minute. Its tests validate the
+status document and every pushed batch against
+[openapi/ingest-v1.yaml](openapi/ingest-v1.yaml), and sign requests with the
+server's own `monitoring/signing.py`.
 
 **Pantrini migration path:** `apps/ops/checks.py` checks become `@commandr.check`
 functions, `metrics.growth()` rows become `@commandr.kpi`s, `traffic.py` is

@@ -9,10 +9,17 @@ class ConnectorsConfig(AppConfig):
         from commandr.integrations.setup import register
 
         from . import declarations  # noqa: F401  registers every connector
+        from .django_sdk.setup import DjangoSdkSetup
         from .heartbeat.setup import HeartbeatSetup
         from .push_api.setup import PushApiSetup
         from .status_endpoint.setup import StatusEndpointSetup
         from .uptime_probe.setup import UptimeProbeSetup
 
-        for setup in (UptimeProbeSetup(), HeartbeatSetup(), StatusEndpointSetup(), PushApiSetup()):
+        for setup in (
+            UptimeProbeSetup(),
+            HeartbeatSetup(),
+            StatusEndpointSetup(),
+            PushApiSetup(),
+            DjangoSdkSetup(),
+        ):
             register(setup)

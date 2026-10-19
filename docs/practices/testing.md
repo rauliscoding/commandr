@@ -55,9 +55,16 @@ the goal is that every rule we care about has a test that fails when it breaks.
 ## SDK (`commandr-django`)
 
 - Tested against a matrix of supported Django and Python versions in a throwaway
-  project.
-- Its status document is validated against the contract schema in CI, so the SDK
-  and the server can never disagree silently.
+  project: `tox -p auto` in `sdks/python/commandr-django/` runs Django 5.2 on
+  Python 3.10–3.14 and Django 6.0 and 6.1 on 3.12–3.14, each installing the
+  built wheel and running the tests against `tests/testproject`.
+- Its status document and every pushed batch are validated against the
+  contract schemas in `docs/architecture/openapi/ingest-v1.yaml`, and its tests
+  sign polls with the server's own `backend/commandr/monitoring/signing.py`, so
+  the SDK and the server can never disagree silently. (The backend's contract
+  test keeps `ingest/schemas.py` equal to the same file.)
+- Sending is tested against a local fake ingest server: retries keep the
+  Idempotency-Key, a hanging server never blocks the app, buffers stay bounded.
 
 ## What "green" means
 

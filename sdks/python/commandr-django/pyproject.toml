@@ -1,0 +1,83 @@
+[project]
+name = "commandr-django"
+version = "0.1.0"
+description = "Send a Django app's health checks, KPIs, traffic and errors to Commandr."
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.10"
+# Only Django: the SDK sends with the standard library, so it adds nothing to
+# the host app's dependency tree.
+dependencies = ["Django>=5.2,<6.2"]
+classifiers = [
+    "Framework :: Django",
+    "Framework :: Django :: 5.2",
+    "Framework :: Django :: 6.0",
+    "Framework :: Django :: 6.1",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Monitoring",
+]
+
+[project.urls]
+Homepage = "https://github.com/rauliscoding/commandr"
+Documentation = "https://github.com/rauliscoding/commandr/blob/main/docs/connectors/django-sdk.md"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "pytest-django>=4.9",
+    "jsonschema>=4.23",  # contract tests: payloads against docs/architecture/openapi
+    "pyyaml>=6",
+]
+dev = [
+    "commandr-django[test]",
+    "ruff>=0.13",
+    "mypy>=1.18",
+    "django-stubs>=5.2",
+    "types-PyYAML",
+    "types-jsonschema",
+    "tox>=4.20",
+]
+
+[build-system]
+requires = ["setuptools>=77"]  # SPDX `license` expressions
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+commandr_django = ["py.typed"]
+
+# --- Ruff ------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "S", "DJ", "SIM", "PT", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Asserts and fake secrets are fine in tests.
+"tests/**" = ["S101", "S105", "S106"]
+
+# --- mypy ------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*"]
+ignore_missing_imports = true
+
+# --- pytest ----------------------------------------------------------------
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "testproject.settings"
+pythonpath = ["tests"]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"

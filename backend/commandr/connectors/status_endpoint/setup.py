@@ -68,6 +68,74 @@ def _endpoint(connection: Connection) -> StatusEndpoint | None:
     return StatusEndpoint.objects.filter(connection=connection).first()
 
 
+# Shared with the Django SDK, whose connection is also a polled status endpoint.
+
+
+def create_endpoint(*, project: Project, connection: Connection, url: str, interval: str) -> None:
+    """Create the endpoint and poll it once the transaction commits."""
+    from commandr.monitoring.tasks import enqueue_status_poll
+
+    endpoint = StatusEndpoint.objects.create(
+        project=project,
+        connection=connection,
+        url=url,
+        interval_seconds=int(interval),
+        next_run_at=timezone.now() + timedelta(seconds=int(interval)),
+    )
+    transaction.on_commit(lambda: enqueue_status_poll(endpoint))
+
+
+def ensure_signing_secret(project: Project, user: User) -> str | None:
+    """The project's signing secret if this call created it (show it once), else None."""
+    if SigningSecret.objects.filter(project=project).exists():
+        return None
+    secret = generate_signing_secret()
+    signing = SigningSecret(project=project)
+    signing.set_secret(secret)
+    signing.save()
+    record("signing_secret.created", actor=user, organization=project.organization, target=signing)
+    return secret
+
+
+def endpoint_details(connection: Connection) -> list[Detail]:
+    e = _endpoint(connection)
+    if e is None:
+        return []
+    return [
+        Detail("Address", e.url, "code"),
+        Detail("Polled", every(e.interval_seconds)),
+        Detail("Last poll", when(e.last_run_at), "time"),
+        Detail("Last good answer", when(e.last_ok_at), "time"),
+        Detail("Problem", e.last_error or None),
+    ]
+
+
+def endpoint_checks(connection: Connection) -> tuple[int, int] | None:
+    """(checks reported, of which not ok), or None when there is no endpoint."""
+    e = _endpoint(connection)
+    if e is None:
+        return None
+    checks = Check.objects.filter(source=CheckSource.STATUS_ENDPOINT, source_id=e.id)
+    return checks.count(), checks.exclude(status=CheckStatus.OK).count()
+
+
+def remove_endpoint(connection: Connection) -> None:
+    # The signing secret stays: it belongs to the project, not this endpoint.
+    e = _endpoint(connection)
+    if e is not None:
+        Check.objects.filter(source=CheckSource.STATUS_ENDPOINT, source_id=e.id).delete()
+
+
+def poll_now(connection: Connection) -> bool:
+    from commandr.monitoring.tasks import enqueue_status_poll
+
+    e = _endpoint(connection)
+    if e is None:
+        return False
+    transaction.on_commit(lambda: enqueue_status_poll(e))
+    return True
+
+
 class StatusEndpointSetup:
     slug = SLUG
 
@@ -77,8 +145,6 @@ class StatusEndpointSetup:
         return dict(fields.validated_data)
 
     def create(self, *, project: Project, user: User, data: dict[str, Any]) -> SetupResult:
-        from commandr.monitoring.tasks import enqueue_status_poll
-
         url = data["url"]
         connection = new_connection(
             project=project,
@@ -87,28 +153,12 @@ class StatusEndpointSetup:
             mode=ConnectionMode.KEY,
             label=urlsplit(url).hostname or url,
         )
-        endpoint = StatusEndpoint.objects.create(
-            project=project,
-            connection=connection,
-            url=url,
-            interval_seconds=int(data["interval"]),
-            next_run_at=timezone.now() + timedelta(seconds=int(data["interval"])),
-        )
+        create_endpoint(project=project, connection=connection, url=url, interval=data["interval"])
 
         reveal: list[Reveal] = []
         notes = ["We send a signed test request now and show the result here."]
-        signing = SigningSecret.objects.filter(project=project).first()
-        if signing is None:
-            secret = generate_signing_secret()
-            signing = SigningSecret(project=project)
-            signing.set_secret(secret)
-            signing.save()
-            record(
-                "signing_secret.created",
-                actor=user,
-                organization=project.organization,
-                target=signing,
-            )
+        secret = ensure_signing_secret(project, user)
+        if secret is not None:
             reveal.append(Reveal("Signing secret", secret, "secret"))
             notes.append(
                 "Set it in your app as COMMANDR_SIGNING_SECRET. It is shown only now, and "
@@ -116,7 +166,6 @@ class StatusEndpointSetup:
             )
         else:
             notes.append("This project already has a signing secret; your app uses that one.")
-        transaction.on_commit(lambda: enqueue_status_poll(endpoint))
 
         if urlsplit(url).path in ("", "/"):
             notes.append(f"The usual path is {DEFAULT_PATH}.")
@@ -131,16 +180,7 @@ class StatusEndpointSetup:
         )
 
     def describe(self, connection: Connection) -> list[Detail]:
-        e = _endpoint(connection)
-        if e is None:
-            return []
-        return [
-            Detail("Address", e.url, "code"),
-            Detail("Polled", every(e.interval_seconds)),
-            Detail("Last poll", when(e.last_run_at), "time"),
-            Detail("Last good answer", when(e.last_ok_at), "time"),
-            Detail("Problem", e.last_error or None),
-        ]
+        return endpoint_details(connection)
 
     def first_data(self, connection: Connection) -> FirstData:
         e = _endpoint(connection)
@@ -159,16 +199,7 @@ class StatusEndpointSetup:
         )
 
     def disconnect(self, connection: Connection) -> None:
-        # The signing secret stays: it belongs to the project, not this endpoint.
-        e = _endpoint(connection)
-        if e is not None:
-            Check.objects.filter(source=CheckSource.STATUS_ENDPOINT, source_id=e.id).delete()
+        remove_endpoint(connection)
 
     def check_now(self, connection: Connection) -> bool:
-        from commandr.monitoring.tasks import enqueue_status_poll
-
-        e = _endpoint(connection)
-        if e is None:
-            return False
-        transaction.on_commit(lambda: enqueue_status_poll(e))
-        return True
+        return poll_now(connection)

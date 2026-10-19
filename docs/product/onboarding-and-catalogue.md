@@ -84,7 +84,7 @@ from the provider · **ingest** = a Commandr-issued key · **none**.
 | Heartbeat | ingest (URL token) | Missed-job alerts | — | 1 · **available** |
 | Status endpoint | HMAC secret | Checks, gauges, KPIs pulled every 1–5 min | — | 1 · **available** |
 | Push API | ingest | Events, metrics, errors | — | 1 · **available** |
-| Django SDK | ingest + HMAC | All of the above in one `pip install` | — | 1 |
+| Django SDK | ingest + HMAC | All of the above in one `pip install` | — | 1 · **available** |
 | Node / FastAPI SDK | ingest + HMAC | Same | — | 2–3 |
 | OpenTelemetry | ingest | Standard OTLP metrics/logs | — | 3 |
 

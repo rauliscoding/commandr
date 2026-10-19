@@ -62,7 +62,16 @@ Branching, commit messages and review: [docs/practices/git-process.md](docs/prac
   the setup wizard is generic (fields declared in the registry, handlers in
   `connectors/<slug>/setup.py`); connecting needs a recent sign-in. Health page.
 
-Not yet: the `commandr-django` SDK, signing-secret rotation, alert-rule UI,
+**`commandr-django` SDK built** (19 Oct 2026), in `sdks/python/commandr-django/`:
+signed status endpoint with database, cache, Celery and disk checks,
+`@commandr.check` / `@commandr.kpi` / `@commandr.gauge`, per-route-template
+traffic middleware, error logging handler with fingerprints,
+`@commandr.heartbeat`, `commandr.event`. Contract-tested against the OpenAPI
+file and the server's signing code; tox matrix Django 5.2/6.0/6.1 × Python
+3.10–3.14. The `django_sdk` connector is available (ingest key + polled status
+endpoint on one connection). Pantrini is not migrated yet.
+
+Not yet: signing-secret rotation, alert-rule UI,
 incidents, the `watchdog` process, social, email, finance, board. No CI
 workflow yet.
 
@@ -72,6 +81,7 @@ workflow yet.
 docker compose -f deploy/compose/docker-compose.dev.yml up -d db redis   # Postgres :5433, Redis :6380
 cd backend  && ruff check . && ruff format --check . && mypy commandr config && pytest
 cd frontend && npm run lint && npm run typecheck && npm test && npm run build
+cd sdks/python/commandr-django && ruff check . && mypy src tests && pytest   # tox -p auto: version matrix
 ```
 
 Full setup: [docs/development.md](docs/development.md). Tests need the dev
@@ -103,7 +113,8 @@ frontend/                React 19 + TypeScript + Vite SPA
     lib/                 api client, query keys, formatting, a11y helpers
     styles/tokens.css    design tokens — the ONLY place raw colours live
 sdks/
-  python/commandr-django/   the installable agent (status endpoint, traffic, errors, KPIs)
+  python/commandr-django/   the installable agent (status endpoint, traffic, errors, KPIs);
+                            its own pyproject, tests and tox matrix
 deploy/
   compose/               docker-compose.{dev,prod}.yml, Caddyfile
 docs/                    product, architecture (+ ADRs, OpenAPI), practices

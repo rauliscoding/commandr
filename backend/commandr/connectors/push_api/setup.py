@@ -34,6 +34,67 @@ def _key(connection: Connection) -> IngestKey | None:
     return IngestKey.objects.filter(connection=connection).first()
 
 
+# Shared with the Django SDK, which creates an ingest key for its connection too.
+
+
+def create_key(
+    *, project: Project, user: User, connection: Connection, name: str, environment: str
+) -> str:
+    """Create an ingest key for `connection` and return it: the only time it is seen."""
+    secret = generate_ingest_key(environment)
+    key = IngestKey.objects.create(
+        project=project,
+        connection=connection,
+        name=name.strip()[:120],
+        environment=environment,
+        key_hash=digest(secret),
+        last4=secret[-4:],
+        created_by=user,
+    )
+    lookup.add(
+        credential_digest=key.key_hash,
+        kind=CredentialKind.INGEST_KEY,
+        organization_id=project.organization_id,
+        target_id=key.id,
+    )
+    record(
+        "ingest_key.created",
+        actor=user,
+        organization=project.organization,
+        target=key,
+        metadata={"name": key.name, "environment": key.environment, "last4": key.last4},
+    )
+    return secret
+
+
+def key_details(connection: Connection) -> list[Detail]:
+    key = _key(connection)
+    if key is None:
+        return []
+    return [
+        Detail("Key", f"cmdr_ingest_{key.environment}_…{key.last4}", "code"),
+        Detail("Created", when(key.created_at), "time"),
+        Detail("Last used", when(key.last_used_at), "time"),
+        Detail("Last used from", key.last_used_ip),
+    ]
+
+
+def revoke_key(connection: Connection) -> None:
+    key = _key(connection)
+    if key is None:
+        return
+    lookup.remove(key.key_hash)  # refused from the next request on
+    key.revoked_at = timezone.now()
+    key.save(update_fields=["revoked_at"])
+    record(
+        "ingest_key.revoked",
+        actor=None,
+        organization=connection.project.organization,
+        target=key,
+        metadata={"name": key.name, "last4": key.last4},
+    )
+
+
 class PushApiSetup:
     slug = SLUG
 
@@ -43,31 +104,15 @@ class PushApiSetup:
         return dict(fields.validated_data)
 
     def create(self, *, project: Project, user: User, data: dict[str, Any]) -> SetupResult:
-        secret = generate_ingest_key(data["environment"])
         connection = new_connection(
             project=project, user=user, slug=SLUG, mode=ConnectionMode.KEY, label=data["name"]
         )
-        key = IngestKey.objects.create(
+        secret = create_key(
             project=project,
+            user=user,
             connection=connection,
-            name=data["name"].strip(),
+            name=data["name"],
             environment=data["environment"],
-            key_hash=digest(secret),
-            last4=secret[-4:],
-            created_by=user,
-        )
-        lookup.add(
-            credential_digest=key.key_hash,
-            kind=CredentialKind.INGEST_KEY,
-            organization_id=project.organization_id,
-            target_id=key.id,
-        )
-        record(
-            "ingest_key.created",
-            actor=user,
-            organization=project.organization,
-            target=key,
-            metadata={"name": key.name, "environment": key.environment, "last4": key.last4},
         )
         example = (
             f"curl -sS {settings.INGEST_ORIGIN}/v1/ingest \\\n"
@@ -87,15 +132,7 @@ class PushApiSetup:
         )
 
     def describe(self, connection: Connection) -> list[Detail]:
-        key = _key(connection)
-        if key is None:
-            return []
-        return [
-            Detail("Key", f"cmdr_ingest_{key.environment}_…{key.last4}", "code"),
-            Detail("Created", when(key.created_at), "time"),
-            Detail("Last used", when(key.last_used_at), "time"),
-            Detail("Last used from", key.last_used_ip),
-        ]
+        return key_details(connection)
 
     def first_data(self, connection: Connection) -> FirstData:
         key = _key(connection)
@@ -116,19 +153,7 @@ class PushApiSetup:
         )
 
     def disconnect(self, connection: Connection) -> None:
-        key = _key(connection)
-        if key is None:
-            return
-        lookup.remove(key.key_hash)  # refused from the next request on
-        key.revoked_at = timezone.now()
-        key.save(update_fields=["revoked_at"])
-        record(
-            "ingest_key.revoked",
-            actor=None,
-            organization=connection.project.organization,
-            target=key,
-            metadata={"name": key.name, "last4": key.last4},
-        )
+        revoke_key(connection)
 
     def check_now(self, connection: Connection) -> bool:
         return False
