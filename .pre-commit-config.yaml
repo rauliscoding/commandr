@@ -13,16 +13,17 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=500]
 
-  # Keep this rev equal to the ruff that backend[dev] installs, so the hook and
-  # CI agree. Ruff reads backend/pyproject.toml for files under backend/.
+  # Keep this rev equal to the ruff that backend[dev] and the SDK's [dev]
+  # install, so the hook and CI agree. Ruff reads the nearest pyproject.toml:
+  # backend/'s for the backend, sdks/python/commandr-django/'s for the SDK.
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.1
     hooks:
       - id: ruff-check
         args: [--fix]
-        files: ^backend/
+        files: ^(backend|sdks)/
       - id: ruff-format
-        files: ^backend/
+        files: ^(backend|sdks)/
         types_or: [python, pyi]
 
   # Keep this rev equal to the prettier in frontend/package-lock.json.

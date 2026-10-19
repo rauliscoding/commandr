@@ -149,8 +149,8 @@ pre-commit install
 ```
 
 Every `git commit` then runs, on the staged files only: ruff (lint with fixes,
-and format) on `backend/`, prettier on `frontend/`, gitleaks, trailing-whitespace
-and end-of-file fixers, and a 500 KB large-file guard
+and format) on `backend/` and `sdks/`, prettier on `frontend/`, gitleaks,
+trailing-whitespace and end-of-file fixers, and a 500 KB large-file guard
 (`.pre-commit-config.yaml`). A hook that fixes a file stops the commit; review
 the fix, `git add` it and commit again. `pre-commit run --all-files` checks the
 whole tree.
@@ -172,7 +172,8 @@ npm run lint && npm run typecheck && npm test && npm run build
 
 CI (`.github/workflows/ci.yml`) runs these on every pull request and push to
 `main`, against a fresh `postgres:17` with the same roles as the dev database,
-plus a security job (gitleaks over the full history, `pip-audit`,
+plus the SDK's checks above and its tox matrix (one job per environment), a
+security job (gitleaks over the full history, `pip-audit`,
 `npm audit --omit=dev`) and, on pull requests, a check that every commit is
 signed off by its author (`git commit -s`).
 

@@ -115,6 +115,104 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  sdk:
+    name: SDK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdks/python/commandr-django
+    steps:
+      # The whole repository, not just the SDK: the contract tests read
+      # docs/architecture/openapi/ingest-v1.yaml and sign polls with
+      # backend/commandr/monitoring/signing.py.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: sdks/python/commandr-django/pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check --output-format=github .
+
+      - name: Ruff format
+        run: ruff format --check .
+
+      - name: mypy
+        run: mypy src tests
+
+      - name: pytest
+        run: pytest
+
+      # sdk-matrix lists the tox environments by hand; fail here if tox.ini
+      # gains or loses one, so a supported version cannot drop out of CI.
+      - name: sdk-matrix covers every tox environment
+        run: |
+          python - <<'EOF'
+          import subprocess
+          import yaml
+
+          with open("../../../.github/workflows/ci.yml") as f:
+              workflow = yaml.safe_load(f)
+          matrix = workflow["jobs"]["sdk-matrix"]["strategy"]["matrix"]["include"]
+          in_ci = {entry["toxenv"] for entry in matrix}
+          tox_l = subprocess.run(["tox", "-l"], check=True, capture_output=True, text=True)
+          in_tox = set(tox_l.stdout.split())
+          if in_ci != in_tox:
+              raise SystemExit(f"tox.ini only: {sorted(in_tox - in_ci)}; ci.yml only: {sorted(in_ci - in_tox)}")
+          EOF
+
+  sdk-matrix:
+    # One job per tox environment (tox.ini env_list): every supported Django on
+    # every Python it supports. Each installs the built wheel, so a packaging
+    # mistake fails here too.
+    name: SDK ${{ matrix.toxenv }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { python: "3.10", toxenv: py310-django52 }
+          - { python: "3.11", toxenv: py311-django52 }
+          - { python: "3.12", toxenv: py312-django52 }
+          - { python: "3.13", toxenv: py313-django52 }
+          - { python: "3.14", toxenv: py314-django52 }
+          - { python: "3.12", toxenv: py312-django60 }
+          - { python: "3.13", toxenv: py313-django60 }
+          - { python: "3.14", toxenv: py314-django60 }
+          - { python: "3.12", toxenv: py312-django61 }
+          - { python: "3.13", toxenv: py313-django61 }
+          - { python: "3.14", toxenv: py314-django61 }
+    defaults:
+      run:
+        working-directory: sdks/python/commandr-django
+    env:
+      TOX_VERSION: 4.67.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: sdks/python/commandr-django/pyproject.toml
+
+      - name: Install tox
+        run: pip install "tox==${TOX_VERSION}"
+
+      - name: tox -e ${{ matrix.toxenv }}
+        run: tox -e "${{ matrix.toxenv }}"
+
   security:
     name: Security
     runs-on: ubuntu-24.04

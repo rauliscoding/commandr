@@ -1,5 +1,5 @@
-# Weekly dependency updates, one grouped pull request per ecosystem so the
-# queue stays reviewable. Groups apply to version updates only: security
+# Weekly dependency updates, one grouped pull request per ecosystem and
+# directory so the queue stays reviewable. Groups apply to version updates only: security
 # updates (when enabled in the repository settings) still arrive one by one.
 # Dependabot cannot sign off its commits, so the CI DCO job skips its PRs.
 version: 2
@@ -13,6 +13,21 @@ updates:
       include: scope
     groups:
       backend:
+        patterns: ["*"]
+
+  # The SDK is a library: its ranges are what customers' apps resolve against,
+  # so widen them rather than raise the floor. A new Django major also needs a
+  # tox.ini environment and a sdk-matrix entry in .github/workflows/ci.yml.
+  - package-ecosystem: pip
+    directory: /sdks/python/commandr-django
+    schedule:
+      interval: weekly
+    versioning-strategy: widen
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      sdk:
         patterns: ["*"]
 
   - package-ecosystem: npm

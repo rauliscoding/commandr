@@ -87,6 +87,8 @@ below a required status check in the branch protection for `main`.
 |---|---|
 | **Backend** | Python 3.13 and a `postgres:17` service with the same roles as dev and prod (`deploy/compose/postgres/init/01-roles.sh`); tests connect as the non-superuser `commandr_owner`, so RLS is on. `ruff check`, `ruff format --check`, `mypy commandr config`, `makemigrations --check --dry-run`, `pytest` (which also applies every migration to an empty database) |
 | **Frontend** | Node 24. `npm ci`, `npm run lint` (eslint), `npm run typecheck` (`tsc --noEmit -p tsconfig.app.json`), `npm test` (vitest, with axe), `npm run build` |
+| **SDK** | Python 3.13, from `sdks/python/commandr-django/` with the whole repository checked out (the contract tests read the OpenAPI file and the server's signing code). `pip install -e ".[dev]"`, `ruff check`, `ruff format --check`, `mypy src tests`, `pytest`, and a check that **SDK &lt;env&gt;** below lists every `tox.ini` environment |
+| **SDK &lt;env&gt;** | one job per `tox.ini` environment: Django 5.2 on Python 3.10–3.14, Django 6.0 and 6.1 on 3.12–3.14, each `tox -e <env>` installing the built wheel |
 | **Security** | gitleaks over the full history, `pip-audit` on everything the backend installs, `npm audit --omit=dev` |
 | **DCO sign-off** | pull requests only: every non-merge commit carries `Signed-off-by:` matching its author. Dependabot's PRs are exempt (a bot cannot certify the DCO) |
 
@@ -97,16 +99,17 @@ How the workflow is kept trustworthy:
   checksum-verified.
 - `permissions: contents: read` for the whole workflow; a job that needs more
   must widen it for itself only. Checkouts do not persist the token.
-- Dependabot (`.github/dependabot.yml`) opens one grouped PR a week each for pip,
-  npm and the action pins.
+- Dependabot (`.github/dependabot.yml`) opens one grouped PR a week each for the
+  backend's and the SDK's pip dependencies, npm and the action pins. The SDK's
+  ranges are widened, not raised: they are what customers' apps resolve against.
 
-Planned, not yet in CI: Playwright smoke and axe on key routes, migrations
-reversing cleanly, prettier `--check`, Trivy image scan, CodeQL, and
-OpenAPI / ingest-example validation.
+Planned, not yet in CI: `pip-audit` on the SDK's dependencies, Playwright smoke
+and axe on key routes, migrations reversing cleanly, prettier `--check`, Trivy
+image scan, CodeQL, and OpenAPI / ingest-example validation.
 
 Local pre-commit (`pre-commit` framework, `.pre-commit-config.yaml`): ruff lint
-and format, prettier on `frontend/`, gitleaks, trailing whitespace, end-of-file
-fixer, large-file guard. Setup: [development.md § Pre-commit hooks](../development.md#pre-commit-hooks).
+and format on `backend/` and `sdks/`, prettier on `frontend/`, gitleaks,
+trailing whitespace, end-of-file fixer, large-file guard. Setup: [development.md § Pre-commit hooks](../development.md#pre-commit-hooks).
 
 ## Releases and deploys
 

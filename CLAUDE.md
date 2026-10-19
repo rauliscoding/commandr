@@ -75,7 +75,8 @@ Not yet: signing-secret rotation, alert-rule UI,
 incidents, the `watchdog` process, social, email, finance, board.
 
 CI (`.github/workflows/ci.yml`) runs on every pull request and push to `main`:
-backend, frontend, security (gitleaks, pip-audit, npm audit) and DCO sign-off.
+backend, frontend, the SDK (lint, types, tests, and its tox matrix one job per
+environment), security (gitleaks, pip-audit, npm audit) and DCO sign-off.
 Actions are pinned to commit SHAs; Dependabot bumps them weekly.
 
 ## Commands
