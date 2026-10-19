@@ -6,7 +6,7 @@ license = "AGPL-3.0-only"
 requires-python = ">=3.13"
 dependencies = [
     "Django>=5.2.7,<5.3",
-    "djangorestframework>=3.16,<3.17",
+    "djangorestframework>=3.17.2,<3.18",  # 3.17.2: CVE-2026-73228, CVE-2026-73229
     "drf-spectacular>=0.28,<0.29",
     "django-allauth[mfa,socialaccount]>=65.11,<66",
     "django-environ>=0.12,<0.13",
@@ -30,7 +30,7 @@ dev = [
     "ruff>=0.13",
     "mypy>=1.18",
     "django-stubs>=5.2",
-    "djangorestframework-stubs>=3.16",
+    "djangorestframework-stubs>=3.17,<3.18",
     "types-jsonschema",
     "fakeredis>=2.30",       # ingest stream tests without a Redis server
     "time-machine>=2.16",    # frozen clocks for heartbeats, cooldowns, digests

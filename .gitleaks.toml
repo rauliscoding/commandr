@@ -1,0 +1,27 @@
+# gitleaks configuration: the default rules, plus an allowlist of values that
+# are public on purpose. CI (.github/workflows/ci.yml) and the pre-commit hook
+# both read this file.
+#
+# Allowlist exact strings, never paths: a path allowlist would also hide a real
+# secret committed to that file later. Add an entry only for a value that is
+# documented as public or is plainly fake, and say why.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public development and test values"
+regexTarget = "match"
+regexes = [
+  # The throwaway vault keys in docs/development.md, backend/Dockerfile (for
+  # collectstatic) and config/settings/test.py. Documented as public; never
+  # used anywhere real.
+  # gitleaks also base64-decodes values and scans the result, so each key is
+  # listed encoded and decoded.
+  '''M0pDTXhQdFNqVnBHcG1TNXRGc2tYc1pxbW1YbWlRbE4=''',
+  '''3JCMxPtSjVpGpmS5tFskXsZqmmXmiQlN''',
+  '''c2tVd3pCdkVqc3FsS3lRZ1dXRlhJb0Rxb1NkV3ZpTnU=''',
+  '''skUwzBvEjsqlKyQgWWFXIoDqoSdWviNu''',
+  # The fake JWT that backend/tests/test_core.py feeds the log redactor.
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U''',
+]

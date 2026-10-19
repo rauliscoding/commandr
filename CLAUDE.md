@@ -72,8 +72,11 @@ file and the server's signing code; tox matrix Django 5.2/6.0/6.1 × Python
 endpoint on one connection). Pantrini is not migrated yet.
 
 Not yet: signing-secret rotation, alert-rule UI,
-incidents, the `watchdog` process, social, email, finance, board. No CI
-workflow yet.
+incidents, the `watchdog` process, social, email, finance, board.
+
+CI (`.github/workflows/ci.yml`) runs on every pull request and push to `main`:
+backend, frontend, security (gitleaks, pip-audit, npm audit) and DCO sign-off.
+Actions are pinned to commit SHAs; Dependabot bumps them weekly.
 
 ## Commands
 
