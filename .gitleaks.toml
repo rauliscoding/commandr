@@ -24,4 +24,10 @@ regexes = [
   '''skUwzBvEjsqlKyQgWWFXIoDqoSdWviNu''',
   # The fake JWT that backend/tests/test_core.py feeds the log redactor.
   '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U''',
+  # Not a value at all: the Django choices default for an ingest key's
+  # environment (ingest/models.py, the push_api and django_sdk setup forms).
+  '''default=KeyEnvironment\.LIVE''',
+  # The fake ingest key that frontend/src/features/catalogue/SetupSheet.test.tsx
+  # shows once in the setup sheet.
+  '''cmdr_ingest_live_0123456789abcdefghijABCDEFGHIJ0123456789abc''',
 ]
