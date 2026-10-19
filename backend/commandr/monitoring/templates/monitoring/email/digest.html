@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <body style="font-family: system-ui, sans-serif; line-height: 1.5;">
+    <h1 style="font-size: 18px;">{{ project.name }}: {{ headline }}</h1>
+    <p>{{ local_day|date:"l j F Y" }}</p>
+    {% if verdict.state == "nothing_checked" %}
+      <p>Nothing reported in the last 24 hours, so we cannot say whether {{ project.name }} is healthy.</p>
+    {% else %}
+      <p>{{ verdict.ok }} passing · {{ verdict.failing }} failing · {{ verdict.warning }} warning · {{ verdict.unknown }} not reporting{% if alerts_24h %} · {{ alerts_24h }} alert{{ alerts_24h|pluralize }} in the last 24 hours{% endif %}</p>
+    {% endif %}
+    {% if attention %}
+      <h2 style="font-size: 16px;">Needs a look</h2>
+      <ul>{% for c in attention %}<li><strong>{{ c.name }}</strong>: {{ c.status }}{% if c.summary %} — {{ c.summary }}{% endif %}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if heartbeats %}
+      <h2 style="font-size: 16px;">Scheduled jobs</h2>
+      <ul>{% for h in heartbeats %}<li>{{ h.name }}: {{ h.status }} — {{ h.summary }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if kpis %}
+      <h2 style="font-size: 16px;">Numbers</h2>
+      <ul>{% for k in kpis %}<li>{{ k.label }}: {% if k.value is None %}—{% else %}{{ k.value|floatformat:"-2" }}{% endif %}</li>{% endfor %}</ul>
+    {% endif %}
+    <p><a href="{{ health_url }}">Open the Health page</a></p>
+  </body>
+</html>

@@ -34,3 +34,5 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": [],
 }
 LOGGING = {"version": 1, "disable_existing_loggers": False}
+INGEST_ORIGIN = "https://ingest.commandr.test"
+INGEST_RATE_LIMIT_PER_MINUTE = 1_000

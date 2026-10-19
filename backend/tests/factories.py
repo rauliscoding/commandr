@@ -66,3 +66,14 @@ class ConnectionFactory(_TenantFactory):
     connector_slug = "uptime_probe"
     mode = ConnectionMode.NONE
     status = ConnectionStatus.CONNECTED
+
+
+def setup_connection(project: Project, user: User, slug: str, **fields: Any) -> Any:
+    """Run a connector's real setup handler, as the connections API does."""
+    from commandr.integrations.setup import get_setup
+
+    setup = get_setup(slug)
+    assert setup is not None
+    with tenant_context(project.organization_id):
+        data = setup.validate(fields, project)
+        return setup.create(project=project, user=user, data=data)

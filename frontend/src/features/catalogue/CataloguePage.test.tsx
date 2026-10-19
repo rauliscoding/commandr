@@ -24,6 +24,7 @@ function connector(overrides: Partial<ConnectorEntry>): ConnectorEntry {
     requirements: [{ key: "free", label: "Free" }],
     capabilities: [],
     steps: [{ title: "Do the first thing", detail: "Like this." }],
+    fields: [],
     docs_path: "",
     state: "not_connected",
     recommended: false,

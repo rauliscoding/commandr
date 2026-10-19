@@ -42,7 +42,12 @@ auth, tenancy, secrets, outbound HTTP, uploads or permissions against this file.
   IP, with generic responses that do not reveal whether an account exists.
 - Re-authentication (password or MFA) required for: connecting/disconnecting an
   integration, creating API/ingest keys, changing roles, deleting a project,
-  exporting data.
+  exporting data. **As built** (`accounts.reauth.RecentAuthForWrites`): unsafe
+  methods on the connections API need a sign-in or password re-entry within
+  `ACCOUNT_REAUTHENTICATION_TIMEOUT` (300 s); otherwise `401` with
+  `code: reauthentication_required`, and the SPA asks for the password through
+  allauth's `auth/reauthenticate` and retries. Role changes, project deletion
+  and exports adopt it when they are built.
 
 ## Authorization
 
@@ -78,6 +83,20 @@ Two independent layers; either alone must be enough to stop a leak.
    `organization_id`. The application role is **not** the table owner and does
    not have `BYPASSRLS`. Migrations run as a separate owner role.
 
+- **Partitioned tables** (`monitoring_metricpoint`, monthly): the parent and
+  **every partition** have RLS enabled, forced and the same policy, so a query
+  that names a partition directly is filtered too. Partitions are created and
+  dropped by `SECURITY DEFINER` functions owned by the migration role
+  (`monitoring_ensure_point_partitions`, `monitoring_drop_point_partitions`):
+  the app role still has no CREATE privilege.
+- **The one table outside RLS on purpose: `ingest_credentiallookup`**
+  ([ADR 0008](../architecture/decisions/0008-credential-lookup-and-dbless-poller.md)).
+  An ingest request or heartbeat ping carries only its credential, and RLS
+  hides every row until a tenant is set. The lookup maps the credential's
+  SHA-256 to its organization; the view then activates that tenant and loads
+  the key or heartbeat under RLS. It holds hashes only, so a dump of it gives
+  nothing usable. Revoking deletes the row and its cache entry. Do not add
+  other columns to it, and do not create a second table like it without an ADR.
 - IDs exposed in URLs are UUIDs (v7 for index locality), never sequential.
 - Every new endpoint ships with a test proving org B gets 404 for org A's object.
 - Caches are keyed with the organization id. File storage paths are prefixed with
@@ -111,7 +130,11 @@ Two independent layers; either alone must be enough to stop a leak.
 - Format `cmdr_ingest_<env>_<random 32 bytes base62>`, prefix lets secret scanners
   recognise them. Stored as SHA-256 hash + last 4 characters; shown once.
 - Write-only: an ingest key can submit data for one project and do nothing else.
-- Revocable instantly; last-used timestamp and IP shown in the UI.
+- Revocable instantly; last-used timestamp and IP shown in the UI. The IP comes
+  from `X-Forwarded-For` only when the peer is in `TRUSTED_PROXY_CIDRS` (Caddy),
+  and then only its right-most entry (`core.net.client_ip`).
+- **Heartbeat tokens** are credentials too: 32 random bytes, stored as SHA-256
+  only, shown once inside the heartbeat URL.
 
 ### Request signing (status-endpoint pulls)
 
@@ -122,8 +145,14 @@ X-Commandr-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<method>
 ```
 
 Customers verify with a constant-time comparison and reject `|now - t| > 300s`.
-The SDK does this for them. Secrets are per project, rotatable with an overlap
-window (two valid secrets).
+The SDK does this for them. Secrets are per project (`ingest.SigningSecret`,
+vault-sealed: we need the plaintext to sign), shown once. Rotation with an
+overlap window (two valid secrets) is planned and not built yet.
+
+The secret never enters a Celery message: the default-queue scheduler decrypts
+it, signs, and enqueues only the URL and headers (a signature valid for 300 s)
+on the `egress` queue, with `expires=240` so a stale signature is dropped
+rather than sent.
 
 ## Outbound HTTP and SSRF
 
@@ -138,7 +167,13 @@ Commandr fetches URLs that customers type. **All** such requests go through
 - Connect timeout 5s, total 15s, response body cap 1 MB (status) / 25 MB (media).
 - Polling runs from a dedicated worker container on a network with **no route**
   to Postgres, Redis or the admin interfaces — defence in depth if validation is
-  ever bypassed.
+  ever bypassed. As built: the `poller` (`celery -Q egress`) is on the `broker`
+  network (Redis only) and `egress` (internet), never on `data` (Postgres). Its
+  tasks take everything as arguments and hand results to a default-queue task;
+  a test asserts the fetch task makes no database query.
+- Setup validates the address too (resolve, refuse non-public), so the person
+  hears about a private address straight away. The check at fetch time is the
+  one that protects us, because DNS can change.
 
 ## Inbound webhooks
 
@@ -253,7 +288,7 @@ reports within 3 working days.
 
 - [ ] New tenant data is scoped (manager + RLS) and has a cross-tenant test
 - [ ] No secret in serializer, log, exception, task argument or fixture
-- [ ] Outbound requests use `core.http` / `safe_http` with timeouts
+- [ ] Outbound requests use `core.http` / `safe_http` with timeouts; egress tasks take no secret and touch no database
 - [ ] New endpoint: explicit permissions, object-level check, rate limit, input limits
 - [ ] Uploads validated by content, size-capped, re-encoded
 - [ ] Security-relevant action written to the audit log

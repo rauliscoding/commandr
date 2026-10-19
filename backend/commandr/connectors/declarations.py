@@ -1,16 +1,20 @@
 """The v1 integration catalogue (docs/product/onboarding-and-catalogue.md).
 
-Phase 0 declares every connector so the catalogue is complete and honest about
-what is coming; each one becomes `Availability.AVAILABLE` when its connector
-package (auth + sync) lands, via the `/add-connector` skill.
+Every connector is declared so the catalogue is complete and honest about what
+is coming; each one becomes `Availability.AVAILABLE` when its connector package
+(setup handler in `commandr/connectors/<slug>/`) lands, via the `/add-connector`
+skill. Available in Phase 1: uptime_probe, heartbeat, status_endpoint, push_api.
 """
 
 from commandr.integrations.registry import (
     AuthType,
+    Availability,
     Capability,
     Category,
     ConnectorMeta,
+    FieldKind,
     Requirement,
+    SetupField,
     SetupStep,
     recommend,
     register,
@@ -19,6 +23,14 @@ from commandr.tenancy.models import ProjectKind
 
 C = Capability
 R = Requirement
+
+_INTERVAL = SetupField(
+    "interval",
+    "How often",
+    FieldKind.SELECT,
+    default="300",
+    options=(("300", "Every 5 minutes"), ("60", "Every minute")),
+)
 
 # --- App health --------------------------------------------------------------
 register(
@@ -34,6 +46,18 @@ register(
         requirements=(R.FREE,),
         logo_text="UP",
         docs_path="connectors/uptime-probe",
+        availability=Availability.AVAILABLE,
+        fields=(
+            SetupField(
+                "url",
+                "Address to check",
+                FieldKind.URL,
+                help="An https:// address, such as your /healthz/. "
+                "http:// works, but cannot confirm TLS.",
+                placeholder="https://example.com/healthz/",
+            ),
+            _INTERVAL,
+        ),
         steps=(
             SetupStep("Enter the address to check", "An https:// URL, such as your /healthz/."),
             SetupStep("Choose how often", "Every 1 or 5 minutes, depending on your plan."),
@@ -54,6 +78,39 @@ register(
         requirements=(R.FREE, R.CODE_CHANGE),
         logo_text="HB",
         docs_path="connectors/heartbeat",
+        availability=Availability.AVAILABLE,
+        fields=(
+            SetupField(
+                "name", "Job name", help="What runs, in your words.", placeholder="Nightly backup"
+            ),
+            SetupField(
+                "period",
+                "Runs",
+                FieldKind.SELECT,
+                default="86400",
+                options=(
+                    ("300", "Every 5 minutes"),
+                    ("900", "Every 15 minutes"),
+                    ("3600", "Every hour"),
+                    ("21600", "Every 6 hours"),
+                    ("86400", "Every day"),
+                    ("604800", "Every week"),
+                ),
+            ),
+            SetupField(
+                "grace",
+                "Alert when it is late by",
+                FieldKind.SELECT,
+                help="How long after the expected time we wait before telling you.",
+                default="3600",
+                options=(
+                    ("300", "5 minutes"),
+                    ("900", "15 minutes"),
+                    ("3600", "1 hour"),
+                    ("21600", "6 hours"),
+                ),
+            ),
+        ),
         steps=(
             SetupStep("Name the job and its schedule", "For example: nightly backup, every 24 h."),
             SetupStep("Call your heartbeat URL", "Add one curl line at the end of the job."),
@@ -74,6 +131,17 @@ register(
         requirements=(R.FREE, R.CODE_CHANGE),
         logo_text="SE",
         docs_path="connectors/status-endpoint",
+        availability=Availability.AVAILABLE,
+        fields=(
+            SetupField(
+                "url",
+                "Status document address",
+                FieldKind.URL,
+                help="https:// only. Usually /.well-known/commandr/status on your API.",
+                placeholder="https://api.example.com/.well-known/commandr/status",
+            ),
+            _INTERVAL,
+        ),
         steps=(
             SetupStep("Copy your signing secret", "Your app uses it to check our requests."),
             SetupStep(
@@ -97,6 +165,20 @@ register(
         requirements=(R.FREE, R.CODE_CHANGE),
         logo_text="API",
         docs_path="connectors/push-api",
+        availability=Availability.AVAILABLE,
+        fields=(
+            SetupField(
+                "name", "Key name", help="Where it will be used.", placeholder="Production API"
+            ),
+            SetupField(
+                "environment",
+                "Environment",
+                FieldKind.SELECT,
+                help="Shown in the key's prefix, so a leaked live key is easy to spot.",
+                default="live",
+                options=(("live", "Live"), ("test", "Test")),
+            ),
+        ),
         steps=(
             SetupStep("Create an ingest key", "Write-only, shown once. Keep it server-side."),
             SetupStep("Send a test batch", "POST /v1/ingest with the example payload."),

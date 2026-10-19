@@ -18,6 +18,8 @@ dependencies = [
     "django-celery-beat>=2.8,<2.9",
     "gunicorn>=23,<24",
     "whitenoise>=6.9,<7",
+    "jsonschema>=4.23,<5",  # ingest payloads validated against the contract's schemas
+    "redis>=5,<6",          # the ingest stream (also pulled in by celery[redis])
 ]
 
 [project.optional-dependencies]
@@ -29,6 +31,11 @@ dev = [
     "mypy>=1.18",
     "django-stubs>=5.2",
     "djangorestframework-stubs>=3.16",
+    "types-jsonschema",
+    "fakeredis>=2.30",       # ingest stream tests without a Redis server
+    "time-machine>=2.16",    # frozen clocks for heartbeats, cooldowns, digests
+    "pyyaml>=6",             # contract test reads the OpenAPI file
+    "types-PyYAML",
 ]
 
 [build-system]

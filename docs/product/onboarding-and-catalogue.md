@@ -80,10 +80,10 @@ from the provider · **ingest** = a Commandr-issued key · **none**.
 
 | Connector | Auth | Unlocks | Provider cost | Phase |
 |---|---|---|---|---|
-| Uptime probe | none | Up/down, latency, TLS expiry | — | 1 |
-| Heartbeat | ingest (URL token) | Missed-job alerts | — | 1 |
-| Status endpoint | HMAC secret | Checks, gauges, KPIs pulled every 1–5 min | — | 1 |
-| Push API | ingest | Events, metrics, errors | — | 1 |
+| Uptime probe | none | Up/down, latency, TLS expiry | — | 1 · **available** |
+| Heartbeat | ingest (URL token) | Missed-job alerts | — | 1 · **available** |
+| Status endpoint | HMAC secret | Checks, gauges, KPIs pulled every 1–5 min | — | 1 · **available** |
+| Push API | ingest | Events, metrics, errors | — | 1 · **available** |
 | Django SDK | ingest + HMAC | All of the above in one `pip install` | — | 1 |
 | Node / FastAPI SDK | ingest + HMAC | Same | — | 2–3 |
 | OpenTelemetry | ingest | Standard OTLP metrics/logs | — | 3 |

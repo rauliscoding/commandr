@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import ssl
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
@@ -53,6 +55,8 @@ class SafeResponse:
     url: str
     resolved_ip: str
     redirects: list[str] = field(default_factory=list)
+    # When the server's TLS certificate expires (https only; None if unknown).
+    tls_not_after: datetime | None = None
 
     def json(self) -> object:
         import json
@@ -137,7 +141,7 @@ class SafeHttpClient:
         hops: list[str] = []
         current = url
         for _ in range(self.max_redirects + 1):
-            response, ip = self._one(method, current, headers or {})
+            response, ip, tls_not_after = self._one(method, current, headers or {})
             follow = self.max_redirects > 0
             if (
                 follow
@@ -158,13 +162,16 @@ class SafeHttpClient:
                 url=current,
                 resolved_ip=ip,
                 redirects=hops,
+                tls_not_after=tls_not_after,
             )
         raise SafeHttpError("Too many redirects.")
 
     def get(self, url: str, *, headers: dict[str, str] | None = None) -> SafeResponse:
         return self.request("GET", url, headers=headers)
 
-    def _one(self, method: str, url: str, headers: dict[str, str]) -> tuple[httpx.Response, str]:
+    def _one(
+        self, method: str, url: str, headers: dict[str, str]
+    ) -> tuple[httpx.Response, str, datetime | None]:
         parts = urlsplit(url)
         if parts.scheme not in self.allowed_schemes:
             raise DisallowedDestination("Only https:// addresses are allowed here.")
@@ -195,6 +202,7 @@ class SafeHttpClient:
             raise SafeHttpError("The request timed out.") from exc
         except httpx.HTTPError as exc:
             raise SafeHttpError("Could not connect.") from exc
+        tls_not_after = _peer_cert_expiry(response)
         try:
             body = bytearray()
             for chunk in response.iter_bytes():
@@ -206,4 +214,19 @@ class SafeHttpClient:
         finally:
             response.close()
         response._content = bytes(body)
-        return response, ip
+        return response, ip, tls_not_after
+
+
+def _peer_cert_expiry(response: httpx.Response) -> datetime | None:
+    """The verified peer certificate's notAfter, read while the stream is open."""
+    stream = response.extensions.get("network_stream")
+    if stream is None:
+        return None
+    ssl_object = stream.get_extra_info("ssl_object")
+    if not isinstance(ssl_object, ssl.SSLObject | ssl.SSLSocket):
+        return None
+    cert = ssl_object.getpeercert()
+    not_after = cert.get("notAfter") if cert else None
+    if not isinstance(not_after, str):
+        return None
+    return datetime.fromtimestamp(ssl.cert_time_to_seconds(not_after), tz=UTC)

@@ -87,6 +87,28 @@ class SetupStep:
     validator: str | None = None
 
 
+class FieldKind(StrEnum):
+    TEXT = "text"
+    URL = "url"
+    SELECT = "select"
+    NUMBER = "number"
+
+
+@dataclass(frozen=True)
+class SetupField:
+    """One input the setup wizard asks for. The SPA renders it generically, and
+    the connector's own serializer is the authority on what is valid."""
+
+    name: str
+    label: str
+    kind: FieldKind = FieldKind.TEXT
+    help: str = ""
+    required: bool = True
+    default: str = ""
+    options: tuple[tuple[str, str], ...] = ()  # (value, label) for SELECT
+    placeholder: str = ""
+
+
 @dataclass(frozen=True)
 class ConnectorMeta:
     slug: str  # stable forever: stored on Connection rows
@@ -102,6 +124,8 @@ class ConnectorMeta:
     docs_path: str = ""
     availability: Availability = Availability.COMING_SOON
     steps: tuple[SetupStep, ...] = field(default_factory=tuple)
+    # What the wizard's form asks for once the connector is available.
+    fields: tuple[SetupField, ...] = field(default_factory=tuple)
 
 
 _REGISTRY: dict[str, ConnectorMeta] = {}

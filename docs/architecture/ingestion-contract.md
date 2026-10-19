@@ -62,9 +62,20 @@ POST https://ingest.commandr.app/v1/heartbeat/<token>/fail     # explicit failur
 POST https://ingest.commandr.app/v1/heartbeat/<token>/start    # optional: measures duration
 ```
 
-`GET` also accepted for `curl`-in-cron simplicity. Configure in the UI: expected
-period and grace ("every 5 min, alert after 16 min"). The token is the credential
-(unguessable, revocable, scoped to one heartbeat).
+`GET` also accepted for `curl`-in-cron simplicity (on all three; only `POST
+/fail` carries a message). Configure in the UI: expected period and grace
+("every day, alert when an hour late"). The token is the credential
+(unguessable, revocable, scoped to one heartbeat): Commandr stores only its
+SHA-256 and shows the URL **once**, at setup. Lost it? Remove the heartbeat
+and add it again.
+
+Responses: `204` recorded · `404` unknown or revoked token · `429` more than 60
+pings a minute for this heartbeat (`Retry-After`). The `/fail` body (plain
+text) is truncated to 1,000 characters and scrubbed of token-shaped strings.
+
+A heartbeat that has never pinged is **waiting** (unknown), never "ok". It
+fails when its last run reported a failure, or when no success arrived within
+period + grace of the previous one.
 
 ## 1. Status endpoint (pull)
 
@@ -81,7 +92,14 @@ X-Commandr-Project: prj_01JA…
 
 **Verification (customer side):** compute `HMAC-SHA256(secret, "<t>.GET.<path>")`,
 hex-encode, compare in constant time with `v1`; reject if `|now − t| > 300`.
-Respond `401` otherwise, with no body detail.
+Respond `401` otherwise, with no body detail. `<path>` is the request path
+exactly as sent, **without the query string** (`/.well-known/commandr/status`).
+`X-Commandr-Project` is `prj_` + the project id as 32 hex digits.
+
+The secret is per project (every status endpoint and SDK in a project shares
+it), shown once when the first status endpoint is set up, and stored
+vault-encrypted because Commandr needs it to sign. Rotation with an overlap
+window is planned; until then, rotating means removing and re-adding.
 
 **Response** — `200`, `application/json`, ≤ 1 MB, within 10 s:
 
@@ -116,10 +134,17 @@ Rules:
 
 - `status` is the app's own judgement; Commandr can add rules on top (`value`).
 - A check absent from one poll to the next is **recovered**, not unknown — so a
-  per-route check that only exists while failing works naturally.
+  per-route check that only exists while failing works naturally. Commandr
+  sends the recovery message (if it had alerted) and removes the check.
+- A KPI with `"value": null` is shown as "—" (not available), never as 0.
 - Unreachable, non-200, invalid signature response, or invalid JSON → the project's
   synthetic `commandr.reachability` check fails. Timeouts count as failures.
-- Polled every 5 min (free) / 1 min (paid). `ETag` / `304` honoured.
+  Redirects are not followed (a 3xx is a failure). A document that does not
+  match the schema fails too, with the first problem in the check's summary.
+- Polled every 5 min or every minute (chosen at setup). `ETag` / `304`
+  honoured: Commandr sends `If-None-Match` with the last ETag.
+- Requests come from the `poller`, through Commandr's SSRF guard: https only,
+  public addresses only, 10 s, 1 MB.
 
 ## 2. Push API
 
@@ -156,7 +181,14 @@ Idempotency-Key: 01JA9Z…            # optional, recommended; 24h window
 ```
 
 Limits per request: ≤ 1 MB body, ≤ 1,000 items total, timestamps within
-−24 h / +5 min of now. Each section optional.
+−24 h / +5 min of now (with a time zone; a metric without `ts` gets the receipt
+time). Each section optional. Rate limit: 600 requests a minute **per ingest
+key** by default.
+
+Cardinality caps (per plan; defaults): 2,000 metric series per project and 500
+distinct values per attribute key per metric. An item over a cap is rejected
+with `cardinality_limit` and a message naming the attribute; series that
+already exist keep being accepted.
 
 **Response** — `202 Accepted`:
 
@@ -167,10 +199,20 @@ Limits per request: ≤ 1 MB body, ≤ 1,000 items total, timestamps within
 ]}
 ```
 
-Partial acceptance is normal; a whole-request failure uses `400` (malformed),
-`401` (bad key), `413` (too large), `429` (rate limited, `Retry-After`),
-`503` (temporarily not accepting, `Retry-After`). Clients retry `429`/`503`/network
-errors with exponential backoff and the same `Idempotency-Key`.
+Partial acceptance is normal; a whole-request failure uses `400` (malformed,
+including an unknown top-level field), `401` (missing, bad or revoked key),
+`413` (body over 1 MB, or more than 1,000 items), `429` (rate limited,
+`Retry-After`), `503` (temporarily not accepting — the queue is unavailable —
+`Retry-After`). Error bodies are RFC 9457 problem documents with a `code`.
+Clients retry `429`/`503`/network errors with exponential backoff and the same
+`Idempotency-Key`. Idempotency keys are scoped to the ingest key; a repeat
+within 24 h returns the first answer and is not queued again. Points are also
+de-duplicated by `(series, ts)` and events and errors by `id`, so a retry that
+slips past the idempotency window still stores nothing twice.
+
+Personal data: an attribute or property whose key names personal data
+(`email`, `user_id`, `ip`, `name`, `phone`…) or whose value looks like an email
+address or IP address is rejected with `personal_data`.
 
 Errors are grouped by `fingerprint` (SDK computes it from type + culprit + normalised
 frames); the stack is truncated to 64 KB and scrubbed of obvious secrets

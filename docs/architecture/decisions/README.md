@@ -12,3 +12,4 @@ mind is a new ADR that supersedes the old one. Use the `/adr` skill.
 | [0005](0005-pull-and-push-ingestion.md) | Ingestion offers both a signed pull endpoint and a push API | Accepted |
 | [0006](0006-metrics-in-postgres.md) | Store metrics in partitioned PostgreSQL until a measured limit says otherwise | Accepted |
 | [0007](0007-licence-deferred.md) | Licence: AGPL-3.0, alongside a paid hosted service | Accepted |
+| [0008](0008-credential-lookup-and-dbless-poller.md) | Resolve ingest credentials through a hash-only lookup table; poll with no database access | Accepted |

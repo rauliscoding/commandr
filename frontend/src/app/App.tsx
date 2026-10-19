@@ -1,16 +1,8 @@
-import {
-  Activity,
-  BarChart3,
-  Home,
-  KanbanSquare,
-  Mail,
-  Settings,
-  Share2,
-  Wallet,
-} from "lucide-react";
+import { BarChart3, Home, KanbanSquare, Mail, Settings, Share2, Wallet } from "lucide-react";
 import { Navigate, Route, Routes } from "react-router";
 
 import { CataloguePage } from "@/features/catalogue/CataloguePage";
+import { HealthPage } from "@/features/health/HealthPage";
 import { OnboardingPage } from "@/features/onboarding/OnboardingPage";
 import { AreaPlaceholder } from "@/features/placeholder/AreaPlaceholder";
 import { SignInPage } from "@/features/auth/SignInPage";
@@ -62,12 +54,7 @@ export function App() {
           path="home"
           element={<AreaPlaceholder icon={Home} titleKey="nav.home" bodyKey="placeholder.home" />}
         />
-        <Route
-          path="health"
-          element={
-            <AreaPlaceholder icon={Activity} titleKey="nav.health" bodyKey="placeholder.health" />
-          }
-        />
+        <Route path="health" element={<HealthPage />} />
         <Route
           path="social"
           element={

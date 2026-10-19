@@ -49,6 +49,8 @@ INSTALLED_APPS = [
     "commandr.audit",
     "commandr.integrations",
     "commandr.connectors",
+    "commandr.ingest",
+    "commandr.monitoring",
 ]
 
 MIDDLEWARE = [
@@ -138,6 +140,9 @@ ACCOUNT_RATE_LIMITS = {
     "reset_password": "20/h/ip,5/h/key",
 }
 ACCOUNT_PREVENT_ENUMERATION = True
+# How long a sign-in or password re-entry counts as "recent" for sensitive
+# actions: connecting or removing an integration, creating keys (security.md).
+ACCOUNT_REAUTHENTICATION_TIMEOUT = 300
 MFA_SUPPORTED_TYPES = ["totp", "recovery_codes", "webauthn"]
 MFA_PASSKEY_LOGIN_ENABLED = True
 MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = False
@@ -204,6 +209,30 @@ CELERY_TASK_TIME_LIMIT = 300
 CELERY_TASK_SOFT_TIME_LIMIT = 240
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_TASK_DEFAULT_QUEUE = "default"
+# `egress` tasks fetch customer URLs. They run in the `poller` container, which
+# has a route to the broker and the internet but NOT to Postgres: they receive
+# everything they need as arguments and hand results back to a default-queue
+# task (docs/architecture/overview.md § Process types).
+CELERY_TASK_ROUTES = {
+    "commandr.monitoring.tasks.fetch_status": {"queue": "egress"},
+    "commandr.monitoring.tasks.probe_uptime": {"queue": "egress"},
+}
+CELERY_BEAT_SCHEDULE = {
+    "monitoring-schedule-polls": {
+        "task": "commandr.monitoring.tasks.schedule_polls",
+        "schedule": 30.0,
+    },
+    "monitoring-evaluate": {"task": "commandr.monitoring.tasks.evaluate", "schedule": 60.0},
+    "monitoring-digests": {
+        "task": "commandr.monitoring.tasks.send_due_digests",
+        "schedule": 15 * 60.0,
+    },
+    "monitoring-partitions": {
+        "task": "commandr.monitoring.tasks.maintain_partitions",
+        "schedule": 6 * 3600.0,
+    },
+    "monitoring-prune": {"task": "commandr.monitoring.tasks.prune", "schedule": 24 * 3600.0},
+}
 
 # --- Credential vault ------------------------------------------------------
 # Comma-separated Fernet keys, NEWEST FIRST. Rotation: prepend a new key, run
@@ -213,6 +242,39 @@ VAULT_KEYS = env.list("VAULT_KEYS")
 
 # --- Outbound HTTP ---------------------------------------------------------
 SAFE_HTTP_USER_AGENT = "Commandr/0.1 (+https://github.com/rauliscoding/commandr)"
+STATUS_POLLER_USER_AGENT = "Commandr-Poller/1 (+https://github.com/rauliscoding/commandr)"
+
+# --- Proxies ---------------------------------------------------------------
+# Peers allowed to tell us the client's address in X-Forwarded-For. Must match
+# what Caddy is (it is the only thing that can reach web/ingest in compose).
+# Empty = trust nobody: REMOTE_ADDR is the client.
+TRUSTED_PROXY_CIDRS = env.list("TRUSTED_PROXY_CIDRS", default=[])
+
+# --- Ingestion (docs/architecture/ingestion-contract.md) ---------------------
+# Public origin of the ingest API, used to build the URLs and snippets the
+# setup wizard shows (heartbeat URLs, curl examples).
+INGEST_ORIGIN = env("INGEST_ORIGIN", default="http://localhost:8001")
+# Redis holding the ingest stream; the broker's Redis is fine.
+INGEST_STREAM_URL = env("INGEST_STREAM_URL", default=REDIS_URL)
+INGEST_STREAM_KEY = "cmdr:ingest"
+INGEST_STREAM_MAXLEN = env.int("INGEST_STREAM_MAXLEN", default=100_000)
+INGEST_MAX_BODY_BYTES = 1_000_000
+INGEST_MAX_ITEMS = 1_000
+# Every limit is per ingest key / per heartbeat, never global (invariant 4).
+INGEST_RATE_LIMIT_PER_MINUTE = env.int("INGEST_RATE_LIMIT_PER_MINUTE", default=600)
+HEARTBEAT_RATE_LIMIT_PER_MINUTE = env.int("HEARTBEAT_RATE_LIMIT_PER_MINUTE", default=60)
+INGEST_MAX_SERIES_PER_PROJECT = env.int("INGEST_MAX_SERIES_PER_PROJECT", default=2_000)
+INGEST_MAX_ATTR_VALUES = env.int("INGEST_MAX_ATTR_VALUES", default=500)
+
+# --- Monitoring ----------------------------------------------------------------
+MONITORING_ALERT_COOLDOWN_MINUTES = env.int("MONITORING_ALERT_COOLDOWN_MINUTES", default=60)
+# Local hour (in the organization's timezone) the daily digest goes out.
+MONITORING_DIGEST_HOUR = env.int("MONITORING_DIGEST_HOUR", default=7)
+# Raw points are dropped a whole month partition at a time once older than this.
+METRICS_RAW_RETENTION_DAYS = env.int("METRICS_RAW_RETENTION_DAYS", default=90)
+METRICS_ROLLUP_1M_RETENTION_DAYS = 14
+METRICS_ROLLUP_1H_RETENTION_DAYS = 400
+EVENTS_RETENTION_DAYS = 90
 
 # --- Email -----------------------------------------------------------------
 # Resend works through plain SMTP: host smtp.resend.com, port 465, SSL,

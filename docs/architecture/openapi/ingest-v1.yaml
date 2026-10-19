@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Commandr Ingestion API
-  version: 1.0.0-draft
+  version: 1.0.0
   summary: How customer applications send health, metrics, events and errors to Commandr.
   description: |
     Human-readable contract: docs/architecture/ingestion-contract.md.
@@ -22,12 +22,19 @@ paths:
           in: header
           required: false
           schema: { type: string, maxLength: 128 }
-          description: Repeating a request with the same key within 24h has no further effect.
+          description: |
+            Repeating a request with the same key (per ingest key) within 24h has no
+            further effect and returns the first answer.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/IngestBatch' }
+      description: |
+        Validates strictly and accepts item by item: a malformed envelope is a
+        400, a bad item is listed in `rejected` and the rest are accepted.
+        Accepted items are written within seconds (queued, then batched).
+        Rate limits are per ingest key.
       responses:
         '202':
           description: Accepted (possibly partially)
@@ -36,7 +43,11 @@ paths:
               schema: { $ref: '#/components/schemas/IngestResult' }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
-        '413': { $ref: '#/components/responses/Problem' }
+        '413':
+          description: Body over 1 MB (`code` too_large) or more than 1,000 items (`code` too_many_items)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '429': { $ref: '#/components/responses/RetryLater' }
         '503': { $ref: '#/components/responses/RetryLater' }
 
@@ -50,6 +61,7 @@ paths:
       responses:
         '204': { description: Recorded }
         '404': { description: Unknown or revoked token }
+        '429': { $ref: '#/components/responses/RetryLater' }
     get:
       operationId: heartbeatSuccessGet
       summary: Same as POST, for curl-in-cron convenience
@@ -57,6 +69,7 @@ paths:
       responses:
         '204': { description: Recorded }
         '404': { description: Unknown or revoked token }
+        '429': { $ref: '#/components/responses/RetryLater' }
 
   /v1/heartbeat/{token}/start:
     parameters:
@@ -67,6 +80,15 @@ paths:
       security: []
       responses:
         '204': { description: Recorded }
+        '404': { description: Unknown or revoked token }
+        '429': { $ref: '#/components/responses/RetryLater' }
+    get:
+      operationId: heartbeatStartGet
+      summary: Same as POST
+      security: []
+      responses:
+        '204': { description: Recorded }
+        '404': { description: Unknown or revoked token }
 
   /v1/heartbeat/{token}/fail:
     parameters:
@@ -74,6 +96,9 @@ paths:
     post:
       operationId: heartbeatFail
       summary: Report a failed run
+      description: |
+        The optional body is a short message shown in the alert. It is truncated
+        to 1,000 characters and scrubbed of token-shaped strings.
       security: []
       requestBody:
         required: false
@@ -82,6 +107,15 @@ paths:
             schema: { type: string, maxLength: 10000 }
       responses:
         '204': { description: Recorded }
+        '404': { description: Unknown or revoked token }
+        '429': { $ref: '#/components/responses/RetryLater' }
+    get:
+      operationId: heartbeatFailGet
+      summary: Same as POST, without a message
+      security: []
+      responses:
+        '204': { description: Recorded }
+        '404': { description: Unknown or revoked token }
 
 webhooks:
   statusPoll:
@@ -91,7 +125,9 @@ webhooks:
       description: |
         Served by the customer's app (default path /.well-known/commandr/status).
         Commandr signs each request; verify X-Commandr-Signature and reject
-        timestamps older than 300 seconds.
+        timestamps more than 300 seconds from now. The signed path is the URL
+        path exactly as requested, without the query string. Redirects are not
+        followed; answer within 10 s, at most 1 MB.
       parameters:
         - name: X-Commandr-Signature
           in: header
@@ -101,7 +137,13 @@ webhooks:
         - name: X-Commandr-Project
           in: header
           required: true
+          schema: { type: string, pattern: '^prj_[0-9a-f]{32}$' }
+          description: The project's id, so one app can serve several projects.
+        - name: If-None-Match
+          in: header
+          required: false
           schema: { type: string }
+          description: The ETag of the last 200 answer, if it had one.
       responses:
         '200':
           description: Current status

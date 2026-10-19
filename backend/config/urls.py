@@ -19,6 +19,7 @@ urlpatterns = [
     path("accounts/", include("allauth.urls")),
     path("api/", include("commandr.tenancy.urls")),
     path("api/", include("commandr.integrations.urls")),
+    path("api/", include("commandr.monitoring.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     # Never exposed publicly in production: Caddy only routes /admin/ from the
     # private tunnel. See docs/practices/security.md § Infrastructure.

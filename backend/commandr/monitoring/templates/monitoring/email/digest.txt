@@ -1,0 +1,22 @@
+{% autoescape off %}{{ project.name }} — {{ local_day|date:"l j F Y" }}
+
+{{ headline }}.
+{% if verdict.state == "nothing_checked" %}
+Nothing reported in the last 24 hours, so we cannot say whether {{ project.name }} is healthy. Connect an uptime probe, a heartbeat or a status endpoint, or check that the ones you have are still sending.
+{% else %}{{ verdict.ok }} passing · {{ verdict.failing }} failing · {{ verdict.warning }} warning · {{ verdict.unknown }} not reporting{% if alerts_24h %}
+{{ alerts_24h }} alert{{ alerts_24h|pluralize }} sent in the last 24 hours.{% endif %}
+{% endif %}{% if attention %}
+Needs a look
+{% for c in attention %}- {{ c.name }}: {{ c.status }}{% if c.summary %} — {{ c.summary }}{% endif %}
+{% endfor %}{% endif %}{% if heartbeats %}
+Scheduled jobs
+{% for h in heartbeats %}- {{ h.name }}: {{ h.status }} — {{ h.summary }}
+{% endfor %}{% endif %}{% if kpis %}
+Numbers
+{% for k in kpis %}- {{ k.label }}: {% if k.value is None %}—{% else %}{{ k.value|floatformat:"-2" }}{% endif %}
+{% endfor %}{% endif %}
+Health page: {{ health_url }}
+
+—
+Commandr. You get this every morning so that silence never means "probably fine".
+{% endautoescape %}

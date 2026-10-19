@@ -44,6 +44,8 @@ class Connection(TenantOwned):
     credentials_encrypted = models.BinaryField(null=True, editable=False)
     app_credentials_encrypted = models.BinaryField(null=True, editable=False)  # BYO app
     last_synced_at = models.DateTimeField(null=True, blank=True)
+    # When the first real data arrived: ends the wizard's "waiting" state.
+    first_data_at = models.DateTimeField(null=True, blank=True)
     last_error = models.CharField(max_length=500, blank=True)  # sanitised, user-facing
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"

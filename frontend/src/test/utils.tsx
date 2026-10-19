@@ -22,13 +22,42 @@ export function renderAt(
   );
 }
 
-/** Answer fetch() calls from a map of URL → JSON body. Unknown URLs are a test bug. */
-export function mockFetch(routes: Record<string, unknown>): void {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+const REPLY = Symbol("reply");
+
+interface Reply {
+  [REPLY]: true;
+  status: number;
+  body: unknown;
+}
+
+/** A response with a status other than 200 (or no body). */
+export function reply(status: number, body?: unknown): Reply {
+  return { [REPLY]: true, status, body };
+}
+
+function isReply(value: unknown): value is Reply {
+  return typeof value === "object" && value !== null && REPLY in value;
+}
+
+type Route = unknown | ((init: RequestInit | undefined) => unknown);
+
+/**
+ * Answer fetch() calls from a map of `"METHOD url"` (or just `url` for GET) →
+ * JSON body, `reply(status, body)`, or a function of the request returning
+ * either. Unknown URLs are a test bug. The CSRF bootstrap is answered for you.
+ */
+export function mockFetch(routes: Record<string, Route>) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (!(url in routes)) throw new Error(`Unexpected fetch: ${url}`);
-    return new Response(JSON.stringify(routes[url]), {
-      status: 200,
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (url === "/api/csrf/") return new Response(null, { status: 204 });
+    const route = routes[`${method} ${url}`] ?? (method === "GET" ? routes[url] : undefined);
+    if (route === undefined) throw new Error(`Unexpected fetch: ${method} ${url}`);
+    const value =
+      typeof route === "function" ? (route as (i?: RequestInit) => unknown)(init) : route;
+    const { status, body } = isReply(value) ? value : { status: 200, body: value };
+    return new Response(status === 204 || body === undefined ? null : JSON.stringify(body), {
+      status,
       headers: { "Content-Type": "application/json" },
     });
   });

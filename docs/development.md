@@ -87,13 +87,38 @@ Sign up, create an organization and a product, and you land on the integration
 catalogue. In development, email verification is optional and emails print to
 the backend's console.
 
+### App health locally (ingest, drainer, poller, beat)
+
+The Phase 1 health features need four more processes. With the same
+environment variables as `runserver` above (app role, Redis on 6380):
+
+```bash
+# The ingestion API on :8001 (heartbeat URLs and /v1/ingest)
+DJANGO_ROOT_URLCONF=config.urls_ingest python manage.py runserver 127.0.0.1:8001
+# Writes push batches from the Redis stream to Postgres
+python manage.py drain_ingest
+# Fetches status endpoints and uptime probes (the `egress` queue), and schedules them
+celery -A config worker -Q default,egress -l info
+celery -A config beat -l info
+```
+
+Set `INGEST_ORIGIN=http://127.0.0.1:8001` so the setup wizard shows working
+heartbeat URLs. `python manage.py drain_ingest --once` drains what is queued and
+exits, which is handy when testing a single `curl`.
+
+Uptime probes and status endpoints refuse private and loopback addresses
+(that is the SSRF guard working), so a status endpoint served from your own
+machine cannot be polled. Point them at something public, or test the
+document shape with the unit tests instead.
+
 ## Or: everything in containers
 
 ```bash
 docker compose -f deploy/compose/docker-compose.dev.yml up
 ```
 
-Starts Postgres, Redis, migrations (as owner), the API (as app), a Celery worker
+Starts Postgres, Redis, migrations (as owner), the API (as app) on :8000, the
+ingestion API on :8001, a Celery worker, the poller, beat, the ingest drainer
 and Vite. Code is bind-mounted, so edits reload.
 
 ## Checking your change (what CI runs)

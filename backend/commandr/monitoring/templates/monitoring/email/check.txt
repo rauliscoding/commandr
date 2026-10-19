@@ -1,0 +1,15 @@
+{% autoescape off %}{% if action == "alert" %}{{ check.name }} is failing.{% elif action == "reminder" %}{{ check.name }} is still failing.{% else %}{{ check.name }} is passing again.{% endif %}
+
+Project: {{ project.name }}
+Status: {{ check.get_status_display }}{% if check.summary %}
+Detail: {{ check.summary }}{% endif %}
+Since: {{ check.changed_at|date:"Y-m-d H:i" }} UTC
+
+See everything on the Health page:
+{{ health_url }}
+{% if action == "reminder" %}
+You will get a reminder at most every {{ cooldown_minutes }} minutes while it keeps failing, and one message when it recovers.
+{% endif %}
+—
+Commandr
+{% endautoescape %}

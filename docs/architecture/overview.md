@@ -54,7 +54,8 @@ flowchart TB
 | `web` | gunicorn (app API, auth, admin) | User-facing latency |
 | `ingest` | gunicorn with `ROOT_URLCONF=config.urls_ingest` | Ingestion floods must not slow the app; own rate limits and worker count |
 | `worker` | `celery -Q default,sync,publish,email` | Provider calls, scheduled publishing |
-| `poller` | `celery -Q egress` | Fetches customer URLs; runs on a Docker network with **no route** to Postgres/Redis admin ports beyond the broker (see [security.md § SSRF](../practices/security.md#outbound-http-and-ssrf)) |
+| `poller` | `celery -Q egress` | Fetches customer URLs (status endpoints, uptime probes); on the `broker` + `egress` networks only, with **no route** to Postgres (see [security.md § SSRF](../practices/security.md#outbound-http-and-ssrf)). Its tasks take a URL and pre-signed headers and hand results back to a default-queue task |
+| `drainer` | `manage.py drain_ingest` | Reads the ingest Redis stream (consumer group) and writes batches to Postgres; independent of Celery so a busy worker never delays ingestion |
 | `beat` | `celery beat` (django-celery-beat) | Schedules |
 | `watchdog` | management command loop | Self-monitoring and the daily digest, independent of Celery so its silence is meaningful |
 | `caddy` | Caddy | TLS, security headers, serves the built SPA |
@@ -152,8 +153,22 @@ sequenceDiagram
 Accept fast, validate strictly, write in batches. Redis Streams give back-pressure
 and replay; if Redis is down, `ingest` returns `503 Retry-After` and SDKs buffer.
 
+As built (Phase 1): the `ingest` view resolves the key through
+`ingest_credentiallookup` (hash → organization, [ADR 0008](decisions/0008-credential-lookup-and-dbless-poller.md)),
+then works under that tenant's RLS. The `drainer` (`manage.py drain_ingest`, not
+Celery) reads with `XREADGROUP`, writes through `monitoring.write`
+(multi-row `INSERT … ON CONFLICT DO NOTHING RETURNING` rather than `COPY`, so
+replays are no-ops and rollups are updated only for new points), and `XACK`s
+after commit. Entries a crashed drainer left pending are reclaimed with
+`XAUTOCLAIM` after 60 s; an entry that fails five times is moved to
+`cmdr:ingest:dead`.
+
 Pull side: `beat` enqueues due polls on the `egress` queue; `poller` fetches with
 `safe_http` and signed requests, then hands the document to the same write path.
+Due polls are claimed with `SELECT … FOR UPDATE SKIP LOCKED` per tenant and
+their `next_run_at` moved (with jitter) before enqueueing, so two schedulers
+never send the same poll. The heartbeat endpoints write directly (low volume,
+rate-limited per heartbeat).
 
 ## Metric storage
 
@@ -191,9 +206,17 @@ Revisit (TimescaleDB or ClickHouse) only when a measured limit is hit.
   into checks (threshold, absence, rate of change).
 - Notification state machine per key: first failure → alert; repeated failure →
   cooldown (1h); recovery → "passing again" message. Keys that disappear count as
-  recovered (pattern proven in Pantrini's `apps/ops`).
+  recovered (pattern proven in Pantrini's `apps/ops`). `warn` goes to the digest
+  only; `unknown` holds the state and never counts as a recovery. Checks whose
+  source stops reporting turn `unknown` after three intervals. Notifications are
+  an outbox (`monitoring_notification`, unique `dedupe_key`) sent after commit
+  by an idempotent task, by email (Django SMTP → Resend) to owners and admins.
 - Daily digest per project at the org's chosen hour: verdict line, failing checks,
   24h resource summary, KPIs, scheduled posts/emails for the day, board cards due.
+  Phase 1 sends it from `MONITORING_DIGEST_HOUR` (default 07:00) in the
+  organization's time zone, once per local day, with three verdicts: healthy,
+  needs attention, nothing was checked. It runs from Celery beat for now;
+  moving it into `watchdog` is a follow-up.
 - Commandr runs the same machinery on itself (`watchdog`), plus an external uptime
   check from a different provider.
 

@@ -16,7 +16,8 @@ x-backend-env: &backend-env
   REDIS_URL: redis://redis:6379/0
   VAULT_KEYS: ${VAULT_KEYS:-M0pDTXhQdFNqVnBHcG1TNXRGc2tYc1pxbW1YbWlRbE4=}
   APP_ORIGIN: http://localhost:5173
-  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,api
+  INGEST_ORIGIN: http://localhost:8001
+  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,api,ingest
 
 services:
   db:
@@ -60,6 +61,19 @@ services:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_started }
 
+  # The ingestion API: same image, ingest URLs only (config.urls_ingest).
+  ingest:
+    build: { context: ../../backend, target: dev }
+    environment:
+      <<: *backend-env
+      DJANGO_ROOT_URLCONF: config.urls_ingest
+    command: python manage.py runserver 0.0.0.0:8000
+    ports: ["127.0.0.1:8001:8000"]
+    volumes: ["../../backend:/app"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_started }
+
   worker:
     build: { context: ../../backend, target: dev }
     environment: *backend-env
@@ -67,6 +81,32 @@ services:
     volumes: ["../../backend:/app"]
     depends_on:
       migrate: { condition: service_completed_successfully }
+
+  # Fetches customer URLs. In production it has no route to Postgres; in dev
+  # everything shares one network, so that isolation is not exercised here.
+  poller:
+    build: { context: ../../backend, target: dev }
+    environment: *backend-env
+    command: celery -A config worker -Q egress -l info
+    volumes: ["../../backend:/app"]
+    depends_on: [redis]
+
+  beat:
+    build: { context: ../../backend, target: dev }
+    environment: *backend-env
+    command: celery -A config beat -l info
+    volumes: ["../../backend:/app"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  drainer:
+    build: { context: ../../backend, target: dev }
+    environment: *backend-env
+    command: python manage.py drain_ingest
+    volumes: ["../../backend:/app"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_started }
 
   web:
     image: node:24-alpine

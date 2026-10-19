@@ -46,8 +46,25 @@ Branching, commit messages and review: [docs/practices/git-process.md](docs/prac
 - the SPA shell, onboarding, and placeholders for every product area;
 - dev and prod Docker Compose, and the Caddy edge.
 
-Not yet: any connector's auth or sync, ingestion endpoints, monitoring, social,
-email, finance, board (Phase 1+). No CI workflow yet.
+**Phase 1 app-health slice built** (19 Oct 2026):
+- `ingest`: write-only ingest keys (SHA-256 + last 4, shown once, revocable,
+  last used/IP), `POST /v1/ingest` (JSON-schema validation, partial
+  acceptance, Idempotency-Key, per-key rate limits) → Redis stream →
+  `drain_ingest`; heartbeat URLs (success/start/fail, hashed tokens). Tenant
+  found via the hash-only `ingest_credentiallookup` (ADR 0008).
+- `monitoring`: metric series, monthly-partitioned points with per-partition
+  RLS, 1m/1h rollups; checks (ok/warn/fail/unknown), alert rules (threshold,
+  absence), outbox notifications with cooldown and recovery, daily digest with
+  three verdicts; email via Django SMTP (Resend).
+- Uptime probe and signed status-endpoint polling on the `egress` queue
+  (`poller`, no DB route), through `safe_http`.
+- `uptime_probe`, `heartbeat`, `status_endpoint`, `push_api` are available:
+  the setup wizard is generic (fields declared in the registry, handlers in
+  `connectors/<slug>/setup.py`); connecting needs a recent sign-in. Health page.
+
+Not yet: the `commandr-django` SDK, signing-secret rotation, alert-rule UI,
+incidents, the `watchdog` process, social, email, finance, board. No CI
+workflow yet.
 
 ## Commands
 

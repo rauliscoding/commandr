@@ -41,6 +41,19 @@ def _entry(meta: ConnectorMeta, state: str, recommended: bool) -> dict[str, Any]
         ],
         "capabilities": sorted(c.value for c in meta.capabilities),
         "steps": [{"title": s.title, "detail": s.detail} for s in meta.steps],
+        "fields": [
+            {
+                "name": f.name,
+                "label": f.label,
+                "kind": f.kind.value,
+                "help": f.help,
+                "required": f.required,
+                "default": f.default,
+                "placeholder": f.placeholder,
+                "options": [{"value": v, "label": label} for v, label in f.options],
+            }
+            for f in meta.fields
+        ],
         "docs_path": meta.docs_path,
         "state": state,
         "recommended": recommended,
