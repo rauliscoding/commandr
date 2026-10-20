@@ -196,19 +196,27 @@ jobs:
         working-directory: sdks/python/commandr-django
     env:
       TOX_VERSION: 4.67.1
+      # tox itself runs on this Python, NOT the one under test: tox >= 4.65.1
+      # requires Python 3.11+, so installing it into the 3.10 leg failed before
+      # any SDK code ran. tox finds the matrix Python on PATH for the env it builds.
+      TOX_PYTHON: "3.13"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # Both interpreters: the one under test, then TOX_PYTHON. The last one
+      # listed becomes the default `python`, so tox is installed into it.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ matrix.python }}
+          python-version: |
+            ${{ matrix.python }}
+            ${{ env.TOX_PYTHON }}
           cache: pip
           cache-dependency-path: sdks/python/commandr-django/pyproject.toml
 
       - name: Install tox
-        run: pip install "tox==${TOX_VERSION}"
+        run: python -m pip install "tox==${TOX_VERSION}"
 
       - name: tox -e ${{ matrix.toxenv }}
         run: tox -e "${{ matrix.toxenv }}"
